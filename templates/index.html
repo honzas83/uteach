@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Speech to Text — KKY / UWB Pilsen</title>
+  <style>
+    :root {
+      --primary:      #3b82f6;
+      --primary-dark: #2563eb;
+      --bg:           #0f172a;
+      --surface:      #1e293b;
+      --border:       #334155;
+      --text:         #f1f5f9;
+      --muted:        #94a3b8;
+      --success:      #22c55e;
+      --error:        #ef4444;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1rem;
+    }
+
+    .container { width: 100%; max-width: 740px; }
+
+    /* ── Header ── */
+    header { text-align: center; margin-bottom: 2.5rem; }
+    header h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; }
+    header p  { color: var(--muted); margin-top: 0.4rem; font-size: 0.95rem; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 2rem;
+    }
+
+    /* ── Drop zone ── */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      user-select: none;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--primary);
+      background: rgba(59,130,246,.06);
+    }
+    .drop-zone.has-file {
+      border-color: var(--success);
+      background: rgba(34,197,94,.05);
+    }
+    .dz-icon  { font-size: 3rem; margin-bottom: 0.75rem; }
+    .dz-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.35rem; }
+    .dz-hint  { color: var(--muted); font-size: 0.85rem; }
+
+    .browse-btn {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: 0.45rem 1.2rem;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: border-color .15s, color .15s;
+    }
+    .browse-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+    .file-badge {
+      display: none;
+      margin-top: 0.85rem;
+      padding: 0.4rem 0.8rem;
+      background: rgba(34,197,94,.12);
+      border-radius: 6px;
+      font-size: 0.85rem;
+      color: var(--success);
+      word-break: break-all;
+    }
+
+    /* ── Controls row ── */
+    .controls {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-end;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 0.35rem; }
+    .field label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .field select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 0.6rem 0.8rem;
+      font-size: 0.875rem;
+      outline: none;
+      cursor: pointer;
+    }
+    .field select:focus { border-color: var(--primary); }
+
+    .submit-btn {
+      flex: 1;
+      min-width: 140px;
+      padding: 0.7rem 1.5rem;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .submit-btn:hover:not(:disabled) { background: var(--primary-dark); }
+    .submit-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Loading ── */
+    .loading-section { display: none; text-align: center; padding: 1rem 0; }
+
+    .spinner {
+      width: 48px; height: 48px;
+      border: 4px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-label { color: var(--muted); margin-bottom: 1.25rem; font-size: 0.95rem; }
+
+    .progress-track {
+      width: 100%; height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 2px;
+      width: 35%;
+      animation: slide 1.6s ease-in-out infinite;
+    }
+    @keyframes slide {
+      0%   { transform: translateX(-200%); }
+      100% { transform: translateX(400%); }
+    }
+
+    /* ── Result ── */
+    .result-section { display: none; margin-top: 1.5rem; }
+
+    .result-header {
+      display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.5rem;
+    }
+    .result-header h2 { font-size: 1.1rem; }
+    .badge-ok {
+      background: rgba(34,197,94,.15);
+      color: var(--success);
+      padding: .2rem .65rem;
+      border-radius: 99px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .result-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .action-btn {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      transition: background .15s, border-color .15s;
+      text-align: center;
+    }
+    .action-btn:hover { background: var(--border); }
+    .action-btn.primary {
+      background: var(--primary); border-color: var(--primary); color: #fff;
+    }
+    .action-btn.primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+
+    /* ── Error ── */
+    .error-section {
+      display: none;
+      margin-top: 1.5rem;
+      padding: 1rem 1.2rem;
+      background: rgba(239,68,68,.08);
+      border: 1px solid rgba(239,68,68,.3);
+      border-radius: 8px;
+      color: var(--error);
+      font-size: .9rem;
+      line-height: 1.5;
+    }
+
+    .reset-btn {
+      display: block;
+      width: 100%;
+      margin-top: 1rem;
+      padding: .6rem;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: .875rem;
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    .reset-btn:hover { border-color: var(--muted); color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <h1>Speech to Text</h1>
+      <p>Powered by KKY ASR &mdash; University of West Bohemia, Pilsen</p>
+    </header>
+
+    <div class="card">
+
+      <!-- ── Upload section ── -->
+      <div id="upload-section">
+
+        <div class="drop-zone" id="drop-zone">
+          <div class="dz-icon">🎙️</div>
+          <p class="dz-title">Drop your audio or video file here</p>
+          <p class="dz-hint">Supports all FFmpeg formats: .wav, .mp3, .mp4, .ogg, .flac, .webm, .mkv&hellip;</p>
+          <button type="button" class="browse-btn" id="browse-btn">Browse Files</button>
+          <input type="file" id="file-input"
+                 accept="audio/*,video/*,.mp4,.mkv,.avi,.mov,.webm,.wav,.mp3,.ogg,.flac,.m4a,.aac,.opus"
+                 hidden />
+          <div class="file-badge" id="file-badge"></div>
+        </div>
+
+        <div class="controls">
+          <div class="field">
+            <label for="lang-select">Language</label>
+            <select id="lang-select">
+              <option value="cs">Czech</option>
+              <option value="sk">Slovak</option>
+              <option value="en">English</option>
+              <option value="de">German</option>
+              <option value="pl">Polish</option>
+              <option value="hu">Hungarian</option>
+              <option value="hr">Croatian</option>
+              <option value="sr">Serbian</option>
+              <option value="nl">Dutch</option>
+            </select>
+          </div>
+          <button class="submit-btn" id="submit-btn" disabled>Transcribe</button>
+        </div>
+
+      </div><!-- /upload-section -->
+
+      <!-- ── Loading ── -->
+      <div class="loading-section" id="loading-section">
+        <div class="spinner"></div>
+        <p class="loading-label" id="loading-label">Uploading file&hellip;</p>
+        <div class="progress-track"><div class="progress-fill"></div></div>
+      </div>
+
+      <!-- ── Result ── -->
+      <div class="result-section" id="result-section">
+        <div class="result-header">
+          <h2>Transcription</h2>
+          <span class="badge-ok">Complete</span>
+        </div>
+        <div class="result-actions">
+          <button class="action-btn primary" onclick="downloadText()">Download .txt</button>
+          <button class="action-btn" id="next-file-btn">Upload another file</button>
+          <!-- hidden input reused for "upload another file" -->
+          <input type="file" id="next-file-input"
+                 accept="audio/*,video/*,.mp4,.mkv,.avi,.mov,.webm,.wav,.mp3,.ogg,.flac,.m4a,.aac,.opus"
+                 hidden />
+        </div>
+      </div>
+
+      <!-- ── Error ── -->
+      <div class="error-section" id="error-section">
+        <strong>Error:</strong> <span id="error-msg"></span>
+        <button class="reset-btn" onclick="resetApp()">Try again</button>
+      </div>
+
+    </div><!-- /card -->
+  </div><!-- /container -->
+
+  <script>
+    const dropZone       = document.getElementById('drop-zone');
+    const fileInput      = document.getElementById('file-input');
+    const browseBtn      = document.getElementById('browse-btn');
+    const fileBadge      = document.getElementById('file-badge');
+    const submitBtn      = document.getElementById('submit-btn');
+    const langSelect     = document.getElementById('lang-select');
+
+    const uploadSec      = document.getElementById('upload-section');
+    const loadingSec     = document.getElementById('loading-section');
+    const loadingLbl     = document.getElementById('loading-label');
+    const resultSec      = document.getElementById('result-section');
+    const errorSec       = document.getElementById('error-section');
+    const errorMsg       = document.getElementById('error-msg');
+
+    const nextFileBtn    = document.getElementById('next-file-btn');
+    const nextFileInput  = document.getElementById('next-file-input');
+
+    let selectedFile     = null;
+    let currentTask      = null;
+    let pollTimer        = null;
+    let lastTranscription = '';
+
+    /* ── Drag-and-drop ── */
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const f = e.dataTransfer.files[0];
+      if (f) setFile(f);
+    });
+
+    /* ── Click to browse (upload section) ── */
+    browseBtn.addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
+    dropZone.addEventListener('click',  e => { if (e.target !== browseBtn) fileInput.click(); });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+    /* ── "Upload another file" button opens file picker ── */
+    nextFileBtn.addEventListener('click', () => nextFileInput.click());
+    nextFileInput.addEventListener('change', () => {
+      if (nextFileInput.files[0]) {
+        resetApp();
+        setFile(nextFileInput.files[0]);
+        nextFileInput.value = '';
+      }
+    });
+
+    function setFile(file) {
+      selectedFile = file;
+      const mb = (file.size / 1048576).toFixed(1);
+      fileBadge.textContent = `${file.name}  (${mb} MB)`;
+      fileBadge.style.display = 'block';
+      dropZone.classList.add('has-file');
+      submitBtn.disabled = false;
+    }
+
+    /* ── Submit ── */
+    submitBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+
+      uploadSec.style.display  = 'none';
+      loadingSec.style.display = 'block';
+      loadingLbl.textContent   = 'Uploading file\u2026';
+
+      const fd = new FormData();
+      fd.append('file',     selectedFile);
+      fd.append('language', langSelect.value);
+
+      try {
+        const res  = await fetch('/transcribe', { method: 'POST', body: fd });
+        const data = await res.json();
+
+        if (!res.ok || data.error) { showError(data.error || 'Upload failed.'); return; }
+
+        currentTask = data.task_id;
+        loadingLbl.textContent = 'Transcribing\u2026 this may take a few minutes for longer recordings.';
+        startPolling();
+
+      } catch (err) {
+        showError('Failed to reach the server: ' + err.message);
+      }
+    });
+
+    /* ── Poll for task status every 2 s ── */
+    function startPolling() {
+      pollTimer = setInterval(async () => {
+        try {
+          const res  = await fetch(`/status/${currentTask}`);
+          const data = await res.json();
+          if (data.status === 'done')  { clearInterval(pollTimer); showResult(data.result); }
+          if (data.status === 'error') { clearInterval(pollTimer); showError(data.error);   }
+        } catch (_) { /* transient network blip — keep polling */ }
+      }, 2000);
+    }
+
+    /* ── Show result (no textarea — text stored for download only) ── */
+    function showResult(text) {
+      lastTranscription        = text;
+      loadingSec.style.display = 'none';
+      resultSec.style.display  = 'block';
+    }
+
+    /* ── Show error ── */
+    function showError(msg) {
+      loadingSec.style.display = 'none';
+      errorMsg.textContent     = msg;
+      errorSec.style.display   = 'block';
+    }
+
+    /* ── Reset to initial state ── */
+    function resetApp() {
+      selectedFile      = null;
+      currentTask       = null;
+      lastTranscription = '';
+      if (pollTimer) clearInterval(pollTimer);
+
+      fileInput.value         = '';
+      fileBadge.style.display = 'none';
+      dropZone.classList.remove('has-file', 'drag-over');
+      submitBtn.disabled = true;
+
+      resultSec.style.display  = 'none';
+      errorSec.style.display   = 'none';
+      loadingSec.style.display = 'none';
+      uploadSec.style.display  = 'block';
+    }
+
+    /* ── Download as .txt ── */
+    function downloadText() {
+      const blob = new Blob([lastTranscription], { type: 'text/plain;charset=utf-8' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = 'transcription.txt'; a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
