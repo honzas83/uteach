@@ -486,6 +486,9 @@
         // --- Stage 2: AI cleaning (privacy + student names) ---
         stageSummarize.classList.add('active');
 
+        const rawTranscript = transcript;
+        let aiUsed = false;
+
         // Parse student names from uploaded file
         let studentNames = [];
         if (studentFile) {
@@ -517,6 +520,7 @@
             const cleanData = await cleanRes.json();
             if (cleanRes.ok && cleanData.cleaned) {
                 transcript = cleanData.cleaned;
+                aiUsed = true;
             } else {
                 console.warn('AI cleaning failed:', cleanData.error);
             }
@@ -535,10 +539,10 @@
 
         await delay(300);
         goToStep(3);
-        fillResults(transcript);
+        fillResults(transcript, aiUsed ? rawTranscript : null);
     }
 
-    function fillResults(transcript) {
+    function fillResults(transcript, rawTranscript) {
         const body = $('#transcriptBody');
         body.innerHTML = '';
         if (transcript) {
@@ -550,7 +554,59 @@
         } else {
             body.innerHTML = '<p>Transkripce nebyla získána.</p>';
         }
-        $('#summaryBody').innerHTML = '<p><em>AI sumarizace bude dostupná po připojení modelu.</em></p>';
+
+        const summary = $('#summaryBody');
+        if (rawTranscript && rawTranscript !== transcript) {
+            // Show what AI changed
+            const rawLines = rawTranscript.split('\n').filter(Boolean);
+            const cleanLines = transcript.split('\n').filter(Boolean);
+            const rawSet = new Set(rawLines);
+            const cleanSet = new Set(cleanLines);
+
+            const removed = rawLines.filter(l => !cleanSet.has(l));
+            const added = cleanLines.filter(l => !rawSet.has(l));
+
+            let html = '<p style="font-weight:600;margin-bottom:8px;">'
+                + '🔍 AI zpracování — změny:</p>';
+
+            if (removed.length) {
+                html += '<p style="font-size:0.78rem;color:var(--text-2);">'
+                    + 'Odstraněno / změněno:</p>';
+                removed.forEach(l => {
+                    html += '<p style="color:#e53e3e;font-size:0.82rem;'
+                        + 'text-decoration:line-through;opacity:0.7;">'
+                        + escHtml(l) + '</p>';
+                });
+            }
+
+            if (added.length) {
+                html += '<p style="font-size:0.78rem;color:var(--text-2);'
+                    + 'margin-top:8px;">Nahrazeno:</p>';
+                added.forEach(l => {
+                    html += '<p style="color:#38a169;font-size:0.82rem;">'
+                        + escHtml(l) + '</p>';
+                });
+            }
+
+            if (!removed.length && !added.length) {
+                html += '<p style="color:var(--text-3);">'
+                    + 'Žádné změny nebyly potřeba.</p>';
+            }
+
+            summary.innerHTML = html;
+        } else if (rawTranscript === null) {
+            summary.innerHTML = '<p><em>AI čištění nebylo použito.'
+                + '</em></p>';
+        } else {
+            summary.innerHTML = '<p><em>AI nezměnila žádný obsah.'
+                + '</em></p>';
+        }
+    }
+
+    function escHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
     }
 
     /* ---- Results Actions ---- */
