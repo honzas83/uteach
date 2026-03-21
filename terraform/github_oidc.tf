@@ -124,6 +124,12 @@ resource "aws_iam_role_policy" "github_actions_ecs" {
         Effect   = "Allow"
         Action   = "elasticloadbalancing:DescribeLoadBalancers"
         Resource = "*"
+      },
+      {
+        # Smoke test — zjištění CloudFront domény
+        Effect   = "Allow"
+        Action   = "cloudfront:ListDistributions"
+        Resource = "*"
       }
     ]
   })
