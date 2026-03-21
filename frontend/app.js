@@ -56,6 +56,7 @@
     let recordedBlob = null;
     let studentFile = null;
     let privacyText = '';
+    let lastTaskId = null;
     let isRecording = false;
     let recInterval = null;
     let recSec = 0;
@@ -449,6 +450,7 @@
                 return;
             }
             taskId = data.task_id;
+            lastTaskId = taskId;
         } catch (e) {
             showToast('Nelze se připojit k serveru. Spusťte server.py');
             goToStep(1);
@@ -456,23 +458,46 @@
             return;
         }
 
-        // Poll for transcription result
+        // Poll for full result (transcription + summarization + PDF)
         let transcript = null;
+        let summaryText = '';
+        let pdfReady = false;
         while (true) {
             await delay(2000);
             try {
                 const statusRes = await fetch('/status/' + taskId);
                 const statusData = await statusRes.json();
+
+                // Update stage indicators based on backend status
+                if (statusData.status === 'summarizing') {
+                    if (!stageTranscribe.classList.contains('done')) {
+                        stageTranscribe.classList.remove('active');
+                        stageTranscribe.classList.add('done');
+                        stageSummarize.classList.add('active');
+                    }
+                } else if (statusData.status === 'generating_pdf') {
+                    if (!stageSummarize.classList.contains('done')) {
+                        stageTranscribe.classList.remove('active');
+                        stageTranscribe.classList.add('done');
+                        stageSummarize.classList.remove('active');
+                        stageSummarize.classList.add('done');
+                        stagePdf.classList.add('active');
+                    }
+                }
+
                 if (statusData.status === 'done') {
                     transcript = statusData.result;
+                    summaryText = statusData.summary || '';
+                    pdfReady = statusData.pdf_ready || false;
                     break;
                 } else if (statusData.status === 'error') {
-                    showToast(statusData.error || 'Chyba při transkripci');
+                    showToast(statusData.error || 'Chyba při zpracování');
                     goToStep(1);
                     stageTranscribe.classList.remove('active');
+                    stageSummarize.classList.remove('active');
+                    stagePdf.classList.remove('active');
                     return;
                 }
-                // still processing — keep polling
             } catch {
                 showToast('Ztráta spojení se serverem');
                 goToStep(1);
@@ -483,12 +508,11 @@
 
         stageTranscribe.classList.remove('active');
         stageTranscribe.classList.add('done');
+        stageSummarize.classList.remove('active');
+        stageSummarize.classList.add('done');
 
         // --- Stage 2: AI cleaning (privacy + student names) ---
-        stageSummarize.classList.add('active');
-
-        const rawTranscript = transcript;
-        let aiUsed = false;
+        // This runs client-side after backend finishes
 
         // Parse student names from uploaded file
         let studentNames = [];
@@ -508,46 +532,24 @@
             }
         }
 
-        try {
-            const cleanRes = await fetch('/clean', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    transcript: transcript,
-                    student_names: studentNames,
-                    custom_prompt: privacyText
-                })
-            });
-            const cleanData = await cleanRes.json();
-            if (cleanRes.ok && cleanData.cleaned) {
-                transcript = cleanData.cleaned;
-                aiUsed = true;
-            } else {
-                console.warn('AI cleaning failed:', cleanData.error);
+        if (studentNames.length > 0 || privacyText) {
+            try {
+                const cleanRes = await fetch('/clean', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        transcript: transcript,
+                        student_names: studentNames,
+                        custom_prompt: privacyText
+                    })
+                });
+                const cleanData = await cleanRes.json();
+                if (cleanRes.ok && cleanData.cleaned) {
+                    transcript = cleanData.cleaned;
+                }
+            } catch (e) {
+                console.warn('AI cleaning unavailable:', e);
             }
-        } catch (e) {
-            console.warn('AI cleaning unavailable:', e);
-        }
-
-        stageSummarize.classList.remove('active');
-        stageSummarize.classList.add('done');
-
-        // --- Stage 3: AI summarization ---
-        stagePdf.classList.add('active');
-
-        let summaryText = '';
-        try {
-            const sumRes = await fetch('/summarize', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transcript: transcript })
-            });
-            const sumData = await sumRes.json();
-            if (sumRes.ok && sumData.summary) {
-                summaryText = sumData.summary;
-            }
-        } catch (e) {
-            console.warn('Summarization failed:', e);
         }
 
         stagePdf.classList.remove('active');
@@ -555,10 +557,10 @@
 
         await delay(300);
         goToStep(3);
-        fillResults(transcript, summaryText);
+        fillResults(transcript, summaryText, pdfReady, taskId);
     }
 
-    function fillResults(transcript, summaryText) {
+    function fillResults(transcript, summaryText, pdfReady, taskId) {
         const body = $('#transcriptBody');
         body.innerHTML = '';
         if (transcript) {
@@ -584,6 +586,16 @@
         }
 
         summary.innerHTML = html;
+
+        // Enable/disable PDF button
+        if (pdfReady && taskId) {
+            downloadPdf.disabled = false;
+            downloadPdf.classList.remove('disabled');
+            downloadPdf.dataset.taskId = taskId;
+        } else {
+            downloadPdf.disabled = true;
+            downloadPdf.classList.add('disabled');
+        }
     }
 
     function escHtml(s) {
@@ -598,7 +610,14 @@
 
     function copyTxt(t, m) { navigator.clipboard.writeText(t).then(() => showToast(m)); }
 
-    downloadPdf.addEventListener('click', () => showToast('PDF bude k dispozici po připojení backendu'));
+    downloadPdf.addEventListener('click', () => {
+        const taskId = downloadPdf.dataset.taskId;
+        if (taskId) {
+            window.open('/pdf/' + taskId, '_blank');
+        } else {
+            showToast('PDF není k dispozici');
+        }
+    });
     newSession.addEventListener('click', resetApp);
 
     async function resetApp() {
@@ -610,6 +629,7 @@
         recordedBlob = null;
         studentFile = null;
         privacyText = '';
+        lastTaskId = null;
         privacyPrompt.value = '';
         studentFileInput.value = '';
         studentFileTag.classList.add('hidden');
