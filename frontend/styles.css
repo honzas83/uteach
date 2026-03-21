@@ -1294,3 +1294,159 @@ body {
     .modal-body { padding: 16px 18px; }
     .modal-footer { padding: 14px 18px 16px; }
 }
+
+/* ========================================
+   Model & Prompt selection (Step 1)
+   ======================================== */
+
+.model-cfg {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 18px 20px 14px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-sm);
+}
+
+.model-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+@media (max-width: 540px) {
+    .model-row { grid-template-columns: 1fr; }
+}
+
+.model-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.model-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-3);
+}
+
+.model-select {
+    appearance: none;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xs);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.875rem;
+    padding: 8px 32px 8px 12px;
+    cursor: pointer;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%239294A3' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='2 4 6 8 10 4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+}
+
+.model-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.model-select:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.prompt-desc {
+    font-size: 0.82rem;
+    color: var(--text-2);
+    margin-top: 10px;
+    min-height: 0;
+    transition: all var(--dur) var(--ease);
+}
+
+.prompt-desc:empty { margin-top: 0; }
+
+.prompt-params {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.prompt-params:empty { margin-top: 0; }
+
+.param-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.param-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-3);
+    letter-spacing: .03em;
+}
+
+.param-input {
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xs);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.875rem;
+    padding: 7px 12px;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.param-input::placeholder { color: var(--text-3); }
+
+.param-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* ========================================
+   Edit summary bar (Step 3)
+   ======================================== */
+
+.edit-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    align-items: center;
+}
+
+@media (max-width: 540px) {
+    .edit-bar { flex-direction: column; align-items: stretch; }
+}
+
+.edit-input {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xs);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.875rem;
+    padding: 9px 14px;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.edit-input::placeholder { color: var(--text-3); }
+
+.edit-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* PII result card accent */
+.res-icon--red {
+    background: var(--red-bg);
+    color: var(--red);
+}

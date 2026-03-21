@@ -35,8 +35,19 @@
     const langSelect   = $('#langSelect');
     const copyTranscript = $('#copyTranscript');
     const copySummary  = $('#copySummary');
+    const copyPii      = $('#copyPii');
     const downloadPdf  = $('#downloadPdf');
     const newSession   = $('#newSession');
+
+    // Model / prompt selection DOM
+    const modelSelect  = $('#modelSelect');
+    const promptSelect = $('#promptSelect');
+    const promptDesc   = $('#promptDesc');
+    const promptParams = $('#promptParams');
+
+    // Edit summary DOM
+    const editInstruction = $('#editInstruction');
+    const editSummaryBtn  = $('#editSummaryBtn');
 
     // Privacy modal DOM
     const privacyModal   = $('#privacyModal');
@@ -63,6 +74,10 @@
     let analyser = null;
     let animFrame = null;
     let liveStream = null;  // for waveform visualization only
+
+    // Model/prompt state
+    let allPrompts = {};        // { model_name: [ promptEntry, ... ] }
+    let currentSummaryText = '';
 
     // Backup recorder instance
     const backupRecorder = new AutoBackupAudioRecorder({
@@ -191,6 +206,107 @@
         }
         micsLoaded = true;
     }
+
+    /* ---- Model & Prompt selection ---- */
+    async function loadModels() {
+        try {
+            const res = await fetch('/models');
+            const data = await res.json();
+            const models = data.models || [];
+
+            modelSelect.innerHTML = '';
+            if (!models.length) {
+                modelSelect.innerHTML = '<option value="">Žádné modely</option>';
+                return;
+            }
+
+            models.forEach((m, i) => {
+                const o = document.createElement('option');
+                o.value = m;
+                o.textContent = m;
+                if (i === 0) o.selected = true;
+                modelSelect.appendChild(o);
+            });
+
+            await loadPromptsForModel(models[0]);
+        } catch (e) {
+            modelSelect.innerHTML = '<option value="">Nelze načíst modely</option>';
+            console.warn('Model load failed:', e);
+        }
+    }
+
+    async function loadPromptsForModel(modelName) {
+        promptSelect.disabled = true;
+        promptSelect.innerHTML = '<option value="">Načítání...</option>';
+        promptDesc.textContent = '';
+        promptParams.innerHTML = '';
+
+        try {
+            const res = await fetch('/summarize-prompts?model_name=' + encodeURIComponent(modelName));
+            const data = await res.json();
+            const prompts = data[modelName] || [];
+            allPrompts[modelName] = prompts;
+
+            promptSelect.innerHTML = '';
+            if (!prompts.length) {
+                promptSelect.innerHTML = '<option value="">Žádné prompty pro tento model</option>';
+                return;
+            }
+
+            prompts.forEach((p, i) => {
+                const o = document.createElement('option');
+                o.value = p.id;
+                o.textContent = p.name;
+                if (i === 0) o.selected = true;
+                promptSelect.appendChild(o);
+            });
+
+            promptSelect.disabled = false;
+            renderPromptDetails(modelName, prompts[0].id);
+        } catch (e) {
+            promptSelect.innerHTML = '<option value="">Chyba načítání promptů</option>';
+            console.warn('Prompt load failed:', e);
+        }
+    }
+
+    function renderPromptDetails(modelName, promptId) {
+        const prompts = allPrompts[modelName] || [];
+        const entry = prompts.find(p => p.id === promptId);
+        if (!entry) { promptDesc.textContent = ''; promptParams.innerHTML = ''; return; }
+
+        promptDesc.textContent = entry.description || '';
+
+        promptParams.innerHTML = '';
+        (entry.parameters || []).forEach(param => {
+            const div = document.createElement('div');
+            div.className = 'param-field';
+            div.innerHTML = `
+                <label class="param-label" for="param_${param.name}">${param.name}</label>
+                <input class="param-input" id="param_${param.name}" type="text"
+                    placeholder="${param.description || ''}" data-param="${param.name}">
+            `;
+            promptParams.appendChild(div);
+        });
+    }
+
+    function getPromptParameters() {
+        const params = {};
+        promptParams.querySelectorAll('.param-input').forEach(input => {
+            params[input.dataset.param] = input.value.trim();
+        });
+        return params;
+    }
+
+    modelSelect.addEventListener('change', () => {
+        if (modelSelect.value) loadPromptsForModel(modelSelect.value);
+    });
+
+    promptSelect.addEventListener('change', () => {
+        renderPromptDetails(modelSelect.value, promptSelect.value);
+    });
+
+    // Load models on startup
+    loadModels();
 
     /* ---- Recording (via AutoBackupAudioRecorder) ---- */
     recordBtn.addEventListener('click', () => isRecording ? stopRec() : startRec());
@@ -416,15 +532,30 @@
         studentDropzone.style.display = '';
     });
 
+    /* ---- Polling helper ---- */
+    async function pollJob(taskId) {
+        while (true) {
+            await delay(2000);
+            const res = await fetch('/status/' + taskId);
+            const data = await res.json();
+            if (data.status === 'finished') return data.result;
+            if (data.status === 'failed') throw new Error(data.error || 'Job failed');
+        }
+    }
+
+    /* ---- Processing ---- */
     async function runProcessing() {
         const stageTranscribe = $('#stageTranscribe');
         const stageSummarize  = $('#stageSummarize');
         const stagePdf        = $('#stagePdf');
 
-        // --- Stage 1: Transcription via backend ---
+        const modelName  = modelSelect.value;
+        const promptId   = promptSelect.value;
+        const parameters = getPromptParameters();
+
+        // --- Stage 1: Transcription ---
         stageTranscribe.classList.add('active');
 
-        // Build FormData with the audio file
         const formData = new FormData();
         const isUpload = panelUpload.classList.contains('active');
         if (isUpload && currentFile) {
@@ -438,7 +569,7 @@
         }
         formData.append('language', langSelect ? langSelect.value : 'cs');
 
-        let taskId;
+        let transcript = null;
         try {
             const res = await fetch('/transcribe', { method: 'POST', body: formData });
             const data = await res.json();
@@ -448,61 +579,28 @@
                 stageTranscribe.classList.remove('active');
                 return;
             }
-            taskId = data.task_id;
+            transcript = await pollJob(data.task_id);
         } catch (e) {
-            showToast('Nelze se připojit k serveru. Spusťte server.py');
+            showToast(e.message || 'Nelze se připojit k serveru');
             goToStep(1);
             stageTranscribe.classList.remove('active');
             return;
         }
 
-        // Poll for transcription result
-        let transcript = null;
-        while (true) {
-            await delay(2000);
-            try {
-                const statusRes = await fetch('/status/' + taskId);
-                const statusData = await statusRes.json();
-                if (statusData.status === 'done') {
-                    transcript = statusData.result;
-                    break;
-                } else if (statusData.status === 'error') {
-                    showToast(statusData.error || 'Chyba při transkripci');
-                    goToStep(1);
-                    stageTranscribe.classList.remove('active');
-                    return;
-                }
-                // still processing — keep polling
-            } catch {
-                showToast('Ztráta spojení se serverem');
-                goToStep(1);
-                stageTranscribe.classList.remove('active');
-                return;
-            }
-        }
-
         stageTranscribe.classList.remove('active');
         stageTranscribe.classList.add('done');
 
-        // --- Stage 2: AI cleaning (privacy + student names) ---
+        // --- Stage 2: AI cleaning ---
         stageSummarize.classList.add('active');
 
-        const rawTranscript = transcript;
-        let aiUsed = false;
-
-        // Parse student names from uploaded file
         let studentNames = [];
         if (studentFile) {
             try {
                 const sf = new FormData();
                 sf.append('file', studentFile);
-                const parseRes = await fetch('/parse-students', {
-                    method: 'POST', body: sf
-                });
+                const parseRes = await fetch('/parse-students', { method: 'POST', body: sf });
                 const parseData = await parseRes.json();
-                if (parseRes.ok && parseData.names) {
-                    studentNames = parseData.names;
-                }
+                if (parseRes.ok && parseData.names) studentNames = parseData.names;
             } catch (e) {
                 console.warn('Student file parse failed:', e);
             }
@@ -513,17 +611,17 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    transcript: transcript,
-                    student_names: studentNames,
-                    custom_prompt: privacyText
+                    transcript,
+                    model_name: modelName,
+                    prompt_id: 'remove_political_anonymize',
+                    parameters: { student_names: studentNames.join(', ') },
                 })
             });
             const cleanData = await cleanRes.json();
-            if (cleanRes.ok && cleanData.cleaned) {
-                transcript = cleanData.cleaned;
-                aiUsed = true;
-            } else {
-                console.warn('AI cleaning failed:', cleanData.error);
+            if (cleanRes.ok && cleanData.task_id) {
+                try { transcript = await pollJob(cleanData.task_id); } catch (e) {
+                    console.warn('AI cleaning failed:', e);
+                }
             }
         } catch (e) {
             console.warn('AI cleaning unavailable:', e);
@@ -532,33 +630,58 @@
         stageSummarize.classList.remove('active');
         stageSummarize.classList.add('done');
 
-        // --- Stage 3: AI summarization ---
+        // --- Stage 3: Summarization + optional PII detection ---
         stagePdf.classList.add('active');
 
         let summaryText = '';
+        let piiText = '';
+
+        // Summarization using selected prompt
         try {
             const sumRes = await fetch('/summarize', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transcript: transcript })
+                body: JSON.stringify({ transcript, model_name: modelName, prompt_id: promptId, parameters })
             });
             const sumData = await sumRes.json();
-            if (sumRes.ok && sumData.summary) {
-                summaryText = sumData.summary;
+            if (sumRes.ok && sumData.task_id) {
+                try { summaryText = await pollJob(sumData.task_id); } catch (e) {
+                    console.warn('Summarization polling failed:', e);
+                }
             }
         } catch (e) {
             console.warn('Summarization failed:', e);
         }
 
+        // PII detection — run in parallel after summary, show card if results
+        try {
+            const piiRes = await fetch('/pii-detect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transcript, model_name: modelName, prompt_id: 'detect_all', parameters: {} })
+            });
+            const piiData = await piiRes.json();
+            if (piiRes.ok && piiData.task_id) {
+                try { piiText = await pollJob(piiData.task_id); } catch (e) {
+                    console.warn('PII detection polling failed:', e);
+                }
+            }
+        } catch (e) {
+            console.warn('PII detection failed:', e);
+        }
+
         stagePdf.classList.remove('active');
         stagePdf.classList.add('done');
 
+        currentSummaryText = summaryText;
+
         await delay(300);
         goToStep(3);
-        fillResults(transcript, summaryText);
+        fillResults(transcript, summaryText, piiText);
     }
 
-    function fillResults(transcript, summaryText) {
+    function fillResults(transcript, summaryText, piiText) {
+        // Transcript
         const body = $('#transcriptBody');
         body.innerHTML = '';
         if (transcript) {
@@ -571,19 +694,25 @@
             body.innerHTML = '<p>Transkripce nebyla získána.</p>';
         }
 
+        // Summary
         const summary = $('#summaryBody');
-        let html = '';
-
-        // AI summary
         if (summaryText) {
-            summaryText.split('\n').filter(Boolean).forEach(line => {
-                html += '<p>' + escHtml(line) + '</p>';
-            });
+            summary.innerHTML = summaryText.split('\n').filter(Boolean)
+                .map(line => '<p>' + escHtml(line) + '</p>').join('');
         } else {
-            html += '<p><em>Shrnutí nebylo vygenerováno.</em></p>';
+            summary.innerHTML = '<p><em>Shrnutí nebylo vygenerováno.</em></p>';
         }
 
-        summary.innerHTML = html;
+        // PII
+        const piiCard = $('#piiCard');
+        const piiBody = $('#piiBody');
+        if (piiText && piiText.trim()) {
+            piiBody.innerHTML = piiText.split('\n').filter(Boolean)
+                .map(line => '<p>' + escHtml(line) + '</p>').join('');
+            piiCard.classList.remove('hidden');
+        } else {
+            piiCard.classList.add('hidden');
+        }
     }
 
     function escHtml(s) {
@@ -592,9 +721,50 @@
         return d.innerHTML;
     }
 
+    /* ---- Edit summary ---- */
+    editSummaryBtn.addEventListener('click', async () => {
+        const instruction = editInstruction.value.trim();
+        if (!instruction) { showToast('Zadejte instrukci pro úpravu'); return; }
+        if (!currentSummaryText) { showToast('Nejprve vygenerujte shrnutí'); return; }
+
+        editSummaryBtn.disabled = true;
+        editSummaryBtn.textContent = 'Upravuji...';
+
+        try {
+            const res = await fetch('/edit-summary', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    summary: currentSummaryText,
+                    instruction,
+                    model_name: modelSelect.value,
+                })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.task_id) throw new Error(data.error || 'Chyba');
+            const edited = await pollJob(data.task_id);
+            currentSummaryText = edited;
+            const summary = $('#summaryBody');
+            summary.innerHTML = edited.split('\n').filter(Boolean)
+                .map(line => '<p>' + escHtml(line) + '</p>').join('');
+            editInstruction.value = '';
+            showToast('Shrnutí upraveno');
+        } catch (e) {
+            showToast(e.message || 'Úprava shrnutí selhala');
+        } finally {
+            editSummaryBtn.disabled = false;
+            editSummaryBtn.innerHTML = `
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11.5 2.5a1.5 1.5 0 0 1 2.12 2.12L5 13.12 2 14l.88-3L11.5 2.5z"/>
+                </svg>
+                Upravit shrnutí`;
+        }
+    });
+
     /* ---- Results Actions ---- */
     copyTranscript.addEventListener('click', () => copyTxt($('#transcriptBody').innerText, 'Transkript zkopírován'));
     copySummary.addEventListener('click', () => copyTxt($('#summaryBody').innerText, 'Shrnutí zkopírováno'));
+    copyPii && copyPii.addEventListener('click', () => copyTxt($('#piiBody').innerText, 'PII zkopírováno'));
 
     function copyTxt(t, m) { navigator.clipboard.writeText(t).then(() => showToast(m)); }
 
@@ -610,6 +780,7 @@
         recordedBlob = null;
         studentFile = null;
         privacyText = '';
+        currentSummaryText = '';
         privacyPrompt.value = '';
         studentFileInput.value = '';
         studentFileTag.classList.add('hidden');
@@ -621,6 +792,7 @@
         filePreview.classList.add('hidden');
         recPreview.classList.add('hidden');
         recorderTime.textContent = '00:00';
+        editInstruction.value = '';
         clearCanvas();
 
         tabs.forEach(t => t.classList.remove('active'));
