@@ -755,6 +755,45 @@
   }
 
   /* ═══════════════ RESULTS ═══════════════ */
+
+  /* ── WebM → MP3 conversion using lamejs ── */
+  async function convertToMp3(blob) {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioCtx = new OfflineAudioContext(1, 1, 44100);
+    const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+
+    // Resample to 44100 mono
+    const sampleRate = 44100;
+    const offCtx = new OfflineAudioContext(1, Math.ceil(decoded.duration * sampleRate), sampleRate);
+    const src = offCtx.createBufferSource();
+    src.buffer = decoded;
+    src.connect(offCtx.destination);
+    src.start();
+    const rendered = await offCtx.startRendering();
+    const samples = rendered.getChannelData(0);
+
+    // Convert float32 → int16
+    const int16 = new Int16Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+
+    // Encode with lamejs
+    const mp3enc = new lamejs.Mp3Encoder(1, sampleRate, 128);
+    const maxChunk = 1152;
+    const mp3Chunks = [];
+    for (let i = 0; i < int16.length; i += maxChunk) {
+      const chunk = int16.subarray(i, i + maxChunk);
+      const buf = mp3enc.encodeBuffer(chunk);
+      if (buf.length > 0) mp3Chunks.push(buf);
+    }
+    const tail = mp3enc.flush();
+    if (tail.length > 0) mp3Chunks.push(tail);
+
+    return new Blob(mp3Chunks, { type: 'audio/mpeg' });
+  }
+
   const MOCK_TRANSCRIPT = 'Dobrý den, vítejte na dnešní přednášce z předmětu Umělá inteligence a strojové učení. Dnes se budeme zabývat tématem neuronových sítí, konkrétně architekturou transformerů.\n\nTransformer byl poprvé představen v článku "Attention Is All You Need" z roku 2017. Klíčovou inovací je mechanismus self-attention, který umožňuje modelu zpracovávat všechny pozice ve vstupní sekvenci paralelně, na rozdíl od rekurentních sítí.\n\nArchitektura se skládá z encoderu a decoderu. Encoder zpracovává vstupní sekvenci a vytváří kontextové reprezentace. Decoder pak generuje výstupní sekvenci token po tokenu.\n\nMechanismus pozornosti funguje tak, že pro každý token vypočítáme tři vektory: Query, Key a Value. Výpočet attention score je pak dot product Query a Key, normalizovaný odmocninou dimenze, následovaný softmax funkcí.\n\nMulti-head attention umožňuje modelu zaměřit se na různé části vstupu současně. Každá "hlava" se může specializovat na jiný typ vztahu mezi tokeny.\n\nPositional encoding je nezbytný, protože mechanismus attention sám o sobě nezohledňuje pořadí tokenů. Používáme sinusoidální funkce nebo naučené pozicové embeddingy.\n\nNa závěr bych chtěl zmínit, že transformery jsou základem moderních jazykových modelů jako GPT, BERT a další. V příští přednášce se podíváme na konkrétní implementaci v PyTorch.\n\nDěkuji za pozornost, uvidíme se příště.';
 
   const MOCK_SUMMARY = '<h3 class="text-base font-semibold mb-4 text-zinc-900 dark:text-zinc-100">\u{1F4DA} Souhrn přednášky</h3><div class="space-y-5"><div><h4 class="text-sm font-semibold text-brand-600 dark:text-brand-400 mb-1.5">\u{1F4CB} Téma</h4><p>Neuronové sítě \u2014 architektura Transformerů</p></div><div><h4 class="text-sm font-semibold text-brand-600 dark:text-brand-400 mb-1.5">\u{1F511} Klíčové body</h4><ul class="list-disc list-inside space-y-1.5 text-zinc-500 dark:text-zinc-400"><li>Transformer představen v článku \u201CAttention Is All You Need\u201D (2017)</li><li>Self-attention mechanismus \u2014 paralelní zpracování sekvencí</li><li>Architektura: Encoder (kontextové reprezentace) + Decoder (generování)</li><li>Attention: Query, Key, Value vektory + softmax normalizace</li><li>Multi-head attention \u2014 specializace na různé vztahy</li><li>Positional encoding \u2014 sinusoidální / naučené embeddingy</li></ul></div><div><h4 class="text-sm font-semibold text-brand-600 dark:text-brand-400 mb-1.5">\u{1F4CC} Závěr</h4><p>Transformery tvoří základ moderních LLM (GPT, BERT). Příští přednáška: implementace v PyTorch.</p></div></div>';
@@ -818,16 +857,21 @@
       // Placeholder — real implementation would generate PDF
     });
 
-    dom.downloadAudio.addEventListener('click', () => {
+    dom.downloadAudio.addEventListener('click', async () => {
       if (dom.downloadAudio.disabled) return;
       if (!state.recordedBlob) { showToast('Žádná nahrávka k dispozici'); return; }
-      const url = URL.createObjectURL(state.recordedBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'uteach-nahravka.webm';
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast('Stahuji audio\u2026');
+      showToast('Převádím na MP3…');
+      try {
+        const mp3Blob = await convertToMp3(state.recordedBlob);
+        const url = URL.createObjectURL(mp3Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'uteach-nahravka.mp3';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        showToast('Chyba při převodu na MP3');
+      }
     });
 
     dom.downloadTranscript.addEventListener('click', () => {
