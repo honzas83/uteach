@@ -186,16 +186,23 @@ def clean_transcript():
             "Also catch partial matches, nicknames, or misspellings of these names."
         )
 
-    prompt = f"""You are a text editor. Process the following lecture transcript according to these rules:
-
-1. Remove all political discussions, political opinions, political debates, and any politically charged content. Replace removed sections with '[politicky obsah odstranen]'.
-2. Keep all educational, academic, and lecture-related content intact.{names_instruction}
-4. Do NOT add any commentary, explanations, or notes. Return ONLY the cleaned transcript.
-5. Preserve the original language of the transcript. Do not translate.
-6. Preserve paragraph structure and formatting.
-
-Transcript:
-{transcript}"""
+    prompt = (
+        "You are a text editor. Process the following "
+        "lecture transcript according to these rules:\n\n"
+        "1. Remove all political discussions, political opinions, "
+        "political debates, and any politically charged content. "
+        "Replace removed sections with "
+        "'[politicky obsah odstranen]'.\n"
+        "2. Keep all educational, academic, and "
+        "lecture-related content intact."
+        f"{names_instruction}\n"
+        "4. Do NOT add any commentary, explanations, or notes. "
+        "Return ONLY the cleaned transcript.\n"
+        "5. Preserve the original language of the transcript. "
+        "Do not translate.\n"
+        "6. Preserve paragraph structure and formatting.\n\n"
+        f"Transcript:\n{transcript}"
+    )
 
     try:
         bedrock = boto3.client('bedrock-runtime', region_name=os.environ.get('AWS_REGION', 'eu-central-1'))
