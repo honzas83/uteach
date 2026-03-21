@@ -38,9 +38,6 @@
     const downloadPdf  = $('#downloadPdf');
     const newSession   = $('#newSession');
 
-    // Context input
-    const contextInput = $('#contextInput');
-
     // Privacy modal DOM
     const privacyModal   = $('#privacyModal');
     const privacyClose   = $('#privacyModalClose');
@@ -441,10 +438,6 @@
             return;
         }
         formData.append('language', langSelect ? langSelect.value : 'cs');
-        const contextText = contextInput ? contextInput.value.trim() : '';
-        if (contextText) {
-            formData.append('subject_context', contextText);
-        }
 
         let taskId;
         try {
@@ -637,7 +630,6 @@
         studentFile = null;
         privacyText = '';
         lastTaskId = null;
-        if (contextInput) contextInput.value = '';
         privacyPrompt.value = '';
         studentFileInput.value = '';
         studentFileTag.classList.add('hidden');

@@ -238,8 +238,7 @@ def _ollama_client():
 
 
 def call_ollama(
-    prompt_id: str, subject_code: str,
-    transcript: str, context: str = '',
+    prompt_id: str, subject_code: str, transcript: str,
 ):
     """Call university Ollama for one YAML prompt."""
     client = _ollama_client()
@@ -247,19 +246,18 @@ def call_ollama(
     system = prompt_cfg['template'].format(
         subject_code=subject_code,
     )
-    user_content = f'Přepis přednášky:\n\n{transcript}'
-    if context:
-        user_content = (
-            f'Kontext/téma přednášky: {context}\n\n'
-            f'{user_content}'
-        )
     response = client.chat(
         model=OLLAMA_MODEL,
         stream=False,
         options={'num_ctx': 8192},
         messages=[
             {'role': 'system', 'content': system},
-            {'role': 'user', 'content': user_content},
+            {
+                'role': 'user',
+                'content': (
+                    f'Přepis přednášky:\n\n{transcript}'
+                ),
+            },
         ],
     )
     return response['message']['content']
@@ -287,7 +285,6 @@ def call_ollama_raw(system: str, user_msg: str):
 def process_task(
     task_id: str, file_data: bytes,
     lang: str, subject_code: str,
-    subject_context: str = '',
 ):
     t = tasks[task_id]
 
@@ -340,7 +337,7 @@ def process_task(
 
         def _run_prompt(pid):
             return pid, call_ollama(
-                pid, subject_code, transcript, subject_context,
+                pid, subject_code, transcript,
             )
 
         with ThreadPoolExecutor(max_workers=3) as pool:
@@ -407,9 +404,6 @@ def transcribe():
         request.form.get('subject_code', 'KKY').strip()
         or 'KKY'
     )
-    subject_context = request.form.get(
-        'subject_context', ''
-    ).strip()
     file_data = f.read()
 
     task_id = str(uuid.uuid4())
@@ -423,10 +417,7 @@ def transcribe():
 
     threading.Thread(
         target=process_task,
-        args=(
-            task_id, file_data, lang,
-            subject_code, subject_context,
-        ),
+        args=(task_id, file_data, lang, subject_code),
         daemon=True,
     ).start()
     return jsonify({'task_id': task_id})

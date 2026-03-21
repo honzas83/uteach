@@ -744,20 +744,6 @@ body {
 
 .btn-block { width: 100%; margin-top: 22px; }
 
-.context-section {
-    margin-top: 18px;
-}
-.context-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.82rem;
-    font-weight: 500;
-    color: var(--text-2);
-    margin-bottom: 8px;
-}
-.context-label svg { width: 15px; height: 15px; }
-
 .btn-accent {
     background: linear-gradient(135deg, var(--accent), var(--purple));
     color: #fff;
