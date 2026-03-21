@@ -38,9 +38,24 @@
     const downloadPdf  = $('#downloadPdf');
     const newSession   = $('#newSession');
 
+    // Privacy modal DOM
+    const privacyModal   = $('#privacyModal');
+    const privacyClose   = $('#privacyModalClose');
+    const privacySkip    = $('#privacySkip');
+    const privacyConfirm = $('#privacyConfirm');
+    const studentDropzone   = $('#studentDropzone');
+    const studentFileInput  = $('#studentFileInput');
+    const studentBrowseBtn  = $('#studentBrowseBtn');
+    const studentFileTag    = $('#studentFileTag');
+    const studentFileName   = $('#studentFileName');
+    const studentFileRemove = $('#studentFileRemove');
+    const privacyPrompt     = $('#privacyPrompt');
+
     // State
     let currentFile = null;
     let recordedBlob = null;
+    let studentFile = null;
+    let privacyText = '';
     let isRecording = false;
     let recInterval = null;
     let recSec = 0;
@@ -126,8 +141,8 @@
     });
 
     function handleFile(file) {
-        if (!file.type.startsWith('audio/')) {
-            showToast('Vyberte prosím zvukový soubor');
+        if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
+            showToast('Vyberte prosím zvukový nebo video soubor');
             return;
         }
         currentFile = file;
@@ -327,8 +342,73 @@
 
     submitBtn.addEventListener('click', () => {
         if (submitBtn.disabled) return;
+        openPrivacyModal();
+    });
+
+    /* ---- Privacy Modal ---- */
+    function openPrivacyModal() {
+        privacyModal.classList.remove('hidden');
+    }
+    function closePrivacyModal() {
+        privacyModal.classList.add('hidden');
+    }
+
+    privacyClose.addEventListener('click', closePrivacyModal);
+    privacyModal.addEventListener('click', (e) => {
+        if (e.target === privacyModal) closePrivacyModal();
+    });
+
+    privacySkip.addEventListener('click', () => {
+        studentFile = null;
+        privacyText = '';
+        privacyPrompt.value = '';
+        studentFileTag.classList.add('hidden');
+        studentDropzone.style.display = '';
+        closePrivacyModal();
         goToStep(2);
         runProcessing();
+    });
+
+    privacyConfirm.addEventListener('click', () => {
+        privacyText = privacyPrompt.value.trim();
+        closePrivacyModal();
+        goToStep(2);
+        runProcessing();
+    });
+
+    // Student file upload
+    studentBrowseBtn.addEventListener('click', (e) => { e.stopPropagation(); studentFileInput.click(); });
+    studentDropzone.addEventListener('click', () => studentFileInput.click());
+
+    studentDropzone.addEventListener('dragover', (e) => { e.preventDefault(); studentDropzone.classList.add('dragover'); });
+    studentDropzone.addEventListener('dragleave', () => studentDropzone.classList.remove('dragover'));
+    studentDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        studentDropzone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) handleStudentFile(e.dataTransfer.files[0]);
+    });
+
+    studentFileInput.addEventListener('change', () => {
+        if (studentFileInput.files.length) handleStudentFile(studentFileInput.files[0]);
+    });
+
+    function handleStudentFile(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext !== 'csv' && ext !== 'pdf') {
+            showToast('Vyberte prosím soubor CSV nebo PDF');
+            return;
+        }
+        studentFile = file;
+        studentFileName.textContent = file.name;
+        studentFileTag.classList.remove('hidden');
+        studentDropzone.style.display = 'none';
+    }
+
+    studentFileRemove.addEventListener('click', () => {
+        studentFile = null;
+        studentFileInput.value = '';
+        studentFileTag.classList.add('hidden');
+        studentDropzone.style.display = '';
     });
 
     async function runProcessing() {
@@ -447,6 +527,12 @@
         }
         currentFile = null;
         recordedBlob = null;
+        studentFile = null;
+        privacyText = '';
+        privacyPrompt.value = '';
+        studentFileInput.value = '';
+        studentFileTag.classList.add('hidden');
+        studentDropzone.style.display = '';
         fileInput.value = '';
         audioPlayer.src = '';
         recordedAudio.src = '';
