@@ -12,8 +12,6 @@
   /* ─────────── DOM refs ─────────── */
   const dom = {
     themeToggle:      $('#themeToggle'),
-    statusBadge:      $('#statusBadge'),
-    statusText:       $('#statusText'),
     stepperFill:      $('#stepperFill'),
     stepDots:         [1, 2, 3].map(i => $(`#stepDot${i}`)),
     stepLabels:       [1, 2, 3].map(i => $(`#stepLabel${i}`)),
@@ -186,7 +184,7 @@
   function handleFile(file) {
     if (!file) return;
     const validTypes = ['audio/', 'video/'];
-    const validExt = /\.(mp3|wav|mp4|m4a|ogg|webm|flac)$/i;
+    const validExt = /\.(mp3|wav|mp4|m4a|ogg|webm|flac|mpeg|mpg|avi|mkv|mov)$/i;
     if (!validTypes.some(t => file.type.startsWith(t)) && !validExt.test(file.name)) {
       showToast('Nepodporovaný formát souboru');
       return;
@@ -715,6 +713,16 @@
     });
   }
 
+  /* ── Markdown → HTML helper ── */
+  function mdToHtml(text) {
+    return text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^\d+\.\s+/gm, '<li>')
+      .replace(/^[-•]\s+/gm, '<li>')
+      .replace(/\n/g, '<br>');
+  }
+
   /* ═══════════════ PROCESSING (real API) ═══════════════ */
   function startProcessing() {
     transitionStep(dom.step1, dom.step2, () => {
@@ -732,8 +740,7 @@
         fd.append('file', state.recordedBlob, 'recording.webm');
       }
       fd.append('language', 'cs');
-      const subjectCode = dom.customInstructions.value.trim() || 'KKY';
-      fd.append('subject_code', subjectCode);
+      fd.append('subject_code', 'KKY');
 
       fetch('/transcribe', { method: 'POST', body: fd })
         .then(r => r.json())
@@ -751,22 +758,27 @@
   }
 
   function pollTask(taskId, stages) {
+    let stage1Done = false;
+    let stage2Done = false;
     const poll = setInterval(() => {
       fetch('/status/' + taskId)
         .then(r => r.json())
         .then(task => {
-          if (task.status === 'summarizing') {
+          if (task.status === 'summarizing' && !stage1Done) {
+            stage1Done = true;
             completeStage(stages[1]);
             activateStage(stages[2]); // "Generování souhrnu"
           }
-          if (task.status === 'generating_pdf') {
+          if (task.status === 'generating_pdf' && !stage2Done) {
+            stage1Done = true;
+            stage2Done = true;
             completeStage(stages[1]);
             completeStage(stages[2]);
           }
           if (task.status === 'done' || task.status === 'error') {
             clearInterval(poll);
-            completeStage(stages[1]);
-            completeStage(stages[2]);
+            if (!stage1Done) completeStage(stages[1]);
+            if (!stage2Done) completeStage(stages[2]);
             // Store results in state for downloads
             state.taskId = taskId;
             state.transcript = task.result || '';
@@ -846,14 +858,7 @@
       if (state.taskError && !state.summaryText) {
         dom.summaryContent.innerHTML = '<p class="text-red-500">Chyba: ' + state.taskError + '</p>';
       } else if (state.summaryText) {
-        // Convert markdown-ish text to HTML
-        const html = state.summaryText
-          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-          .replace(/^\d+\.\s+/gm, '<li>')
-          .replace(/^[-•]\s+/gm, '<li>')
-          .replace(/\n/g, '<br>');
-        dom.summaryContent.innerHTML = '<div class="prose dark:prose-invert text-sm leading-relaxed">' + html + '</div>';
+        dom.summaryContent.innerHTML = '<div class="prose dark:prose-invert text-sm leading-relaxed">' + mdToHtml(state.summaryText) + '</div>';
       } else {
         dom.summaryContent.innerHTML = '<p class="text-zinc-400">Shrnutí nebylo vygenerováno.</p>';
       }
@@ -886,13 +891,7 @@
           dom.editInstructions.value = '';
           if (data.summary) {
             state.summaryText = data.summary;
-            const html = data.summary
-              .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-              .replace(/^\d+\.\s+/gm, '<li>')
-              .replace(/^[-•]\s+/gm, '<li>')
-              .replace(/\n/g, '<br>');
-            dom.summaryContent.innerHTML = '<div class="prose dark:prose-invert text-sm leading-relaxed">' + html + '</div>';
+            dom.summaryContent.innerHTML = '<div class="prose dark:prose-invert text-sm leading-relaxed">' + mdToHtml(data.summary) + '</div>';
             showToast('Souhrn aktualizován');
           } else {
             showToast('Chyba: ' + (data.error || 'neznámá'));

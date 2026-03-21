@@ -36,7 +36,6 @@ FRONTEND_DIR = (
     else _frontend_parent
 )
 
-OUTPUT_FILE = os.path.join(BASE_DIR, 'text.txt')
 PDF_DIR = os.path.join(BASE_DIR, 'pdfs')
 PROMPTS_FILE = os.path.join(
     BASE_DIR, 'prompts', 'promptQWEN.yaml'
@@ -315,15 +314,83 @@ def call_ollama_raw(system: str, user_msg: str):
 # Background processing
 # ══════════════════════════════════════════════════════════════════
 
+# Video extensions that need audio extraction via ffmpeg
+_VIDEO_EXTENSIONS = {
+    '.mp4', '.mpeg', '.mpg', '.avi', '.mkv', '.mov', '.wmv',
+}
+
+
+def _extract_audio(file_data: bytes, filename: str) -> bytes:
+    """Extract audio from video using ffmpeg. Returns WAV bytes."""
+    import subprocess
+    import tempfile
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _VIDEO_EXTENSIONS:
+        return file_data
+
+    logging.info('Extracting audio from video (%s, %d bytes)',
+                 ext, len(file_data))
+    with tempfile.NamedTemporaryFile(
+        suffix=ext, delete=False,
+    ) as tmp_in:
+        tmp_in.write(file_data)
+        tmp_in_path = tmp_in.name
+
+    tmp_out_path = tmp_in_path + '.wav'
+    try:
+        subprocess.run(
+            [
+                'ffmpeg', '-i', tmp_in_path,
+                '-vn',              # no video
+                '-acodec', 'pcm_s16le',
+                '-ar', '16000',     # 16kHz for ASR
+                '-ac', '1',         # mono
+                '-y',               # overwrite
+                tmp_out_path,
+            ],
+            capture_output=True, timeout=300,
+            check=True,
+        )
+        with open(tmp_out_path, 'rb') as f:
+            audio_data = f.read()
+        logging.info('Audio extracted: %d bytes', len(audio_data))
+        return audio_data
+    except FileNotFoundError:
+        logging.warning('ffmpeg not found, sending raw file to ASR')
+        return file_data
+    except subprocess.CalledProcessError as e:
+        logging.error('ffmpeg failed: %s', e.stderr[:500])
+        raise RuntimeError(
+            f'Failed to extract audio: {e.stderr[:200]}'
+        )
+    finally:
+        for p in (tmp_in_path, tmp_out_path):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+
 def process_task(
     task_id: str, file_data: bytes,
     lang: str, subject_code: str,
+    filename: str = 'upload',
 ):
     t = tasks[task_id]
     logging.info(
-        'Task %s: started (lang=%s, %d bytes)',
-        task_id[:8], lang, len(file_data),
+        'Task %s: started (lang=%s, %d bytes, file=%s)',
+        task_id[:8], lang, len(file_data), filename,
     )
+
+    # 0. Extract audio from video if needed
+    try:
+        file_data = _extract_audio(file_data, filename)
+    except RuntimeError as e:
+        logging.error('Task %s: audio extraction failed: %s',
+                      task_id[:8], e)
+        t.update(status='error', error=str(e))
+        return
 
     # 1. Transcription
     app_id = LANGUAGE_MODELS.get(lang, 'generic/cs/zipformer')
@@ -368,8 +435,6 @@ def process_task(
         t.update(status='error', error=f'Network error: {e}')
         return
 
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as fh:
-        fh.write(transcript)
     t['result'] = transcript
 
     # 2. AI summarisation via Ollama (parallel)
@@ -468,6 +533,7 @@ def transcribe():
         or 'KKY'
     )
     file_data = f.read()
+    filename = f.filename or 'upload'
 
     task_id = str(uuid.uuid4())
     tasks[task_id] = {
@@ -480,7 +546,7 @@ def transcribe():
 
     threading.Thread(
         target=process_task,
-        args=(task_id, file_data, lang, subject_code),
+        args=(task_id, file_data, lang, subject_code, filename),
         daemon=True,
     ).start()
     return jsonify({'task_id': task_id})
