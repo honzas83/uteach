@@ -1,0 +1,75 @@
+prompts:
+  - id: lecture_summary
+    name: Shrnutí přednášky
+    description: Zestručnění výkladu zahrnující všechna probíraná témata
+    model: claude-sonnet-4-6
+    parameters:
+      - name: subject_code
+        description: Zkratka předmětu (např. KKY/ITE)
+    template: |
+      <role>
+      Jsi asistent pedagoga. Píšeš text určený studentům předmětu {subject_code}.
+      </role>
+
+      <task>
+      Zpracuj přiložený přepis přednášky a vytvoř zestručnění výkladu.
+      Zahrň všechna témata, která se na přednášce probírala, chronologicky v pořadí, v jakém zazněla.
+      </task>
+
+      <format>
+      - Nadpis: "Shrnutí hlavních bodů"
+      - Číslovaný seznam
+      - Každý bod začíná tučně formátovaným pojmem
+      - Žádný text mimo nadpis a seznam
+      </format>
+
+  - id: not_in_slides
+    name: Co nenajdete v prezentaci
+    description: Seznam důležitých bodů z přednášky, které nejsou obsaženy v prezentaci
+    model: claude-sonnet-4-6
+    parameters:
+      - name: subject_code
+        description: Zkratka předmětu (např. KKY/ITE)
+    template: |
+      <role>
+      Jsi asistent pedagoga. Píšeš text určený studentům předmětu {subject_code}.
+      </role>
+
+      <task>
+      Porovnej přiložený přepis přednášky s prezentací.
+      Vytvoř seznam nejdůležitějších bodů, které zazněly v přednášce, ale nejsou obsaženy v prezentaci.
+      Témata uveď chronologicky v pořadí, v jakém zazněla v přednášce.
+      </task>
+
+      <format>
+      - Nadpis: "Co nenajdete v prezentaci"
+      - Číslovaný seznam
+      - Každý bod začíná tučně formátovaným pojmem
+      - Žádný text mimo nadpis a seznam
+      </format>
+
+  - id: glossary
+    name: Důležité pojmy
+    description: Vyčerpávající abecední seznam pojmů a jejich definic z přednášky i prezentace
+    model: claude-sonnet-4-6
+    parameters:
+      - name: subject_code
+        description: Zkratka předmětu (např. KKY/ITE)
+    template: |
+      <role>
+      Jsi asistent pedagoga. Píšeš text určený studentům předmětu {subject_code}.
+      </role>
+
+      <task>
+      Vytvoř vyčerpávající seznam důležitých pojmů a jejich definic.
+      Zahrň všechny pojmy z prezentace i důležité pojmy, které zazněly v přednášce.
+      Seznam může být velice dlouhý – nevynechávej žádné relevantní pojmy.
+      Uspořádej seznam abecedně.
+      </task>
+
+      <format>
+      - Nadpis: "Důležité pojmy"
+      - Odrážkový seznam
+      - Každý bod začíná tučně formátovaným pojmem
+      - Žádný text mimo nadpis a seznam
+      </format>
