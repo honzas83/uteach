@@ -33,6 +33,10 @@
     const toast        = $('#toast');
     const toastMsg     = $('#toastMessage');
     const langSelect   = $('#langSelect');
+    const studentNames = $('#studentNames');
+    const studentFile  = $('#studentFile');
+    const studentFileBtn = $('#studentFileBtn');
+    const studentFileInfo = $('#studentFileInfo');
     const copyTranscript = $('#copyTranscript');
     const copySummary  = $('#copySummary');
     const downloadPdf  = $('#downloadPdf');
@@ -176,6 +180,34 @@
             micSelect.innerHTML = '<option value="">Mikrofon nedostupny</option>';
         }
     }
+
+    /* ---- Student List Upload ---- */
+    let parsedStudentNames = [];
+
+    studentFileBtn.addEventListener('click', () => studentFile.click());
+
+    studentFile.addEventListener('change', async () => {
+        if (!studentFile.files.length) return;
+        const file = studentFile.files[0];
+        studentFileInfo.textContent = file.name;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('/parse-students', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (res.ok && data.names) {
+                parsedStudentNames = data.names;
+                studentNames.value = data.names.join(', ');
+                showToast(`Nacteno ${data.names.length} jmen`);
+            } else {
+                showToast(data.error || 'Chyba pri nacitani seznamu');
+            }
+        } catch {
+            showToast('Nelze nacist seznam studentu');
+        }
+    });
 
     /* ---- Recording (via AutoBackupAudioRecorder) ---- */
     recordBtn.addEventListener('click', () => isRecording ? stopRec() : startRec());
@@ -404,9 +436,34 @@
         stageTranscribe.classList.remove('active');
         stageTranscribe.classList.add('done');
 
-        // --- Stage 2: Summarize (placeholder — shows transcript for now) ---
+        // --- Stage 2: AI cleaning (remove politics + student names) ---
         stageSummarize.classList.add('active');
-        await delay(500);
+
+        const names = studentNames.value
+            .split(',')
+            .map(n => n.trim())
+            .filter(Boolean);
+        const allNames = [...new Set([...parsedStudentNames, ...names])];
+
+        try {
+            const cleanRes = await fetch('/clean', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    transcript: transcript,
+                    student_names: allNames
+                })
+            });
+            const cleanData = await cleanRes.json();
+            if (cleanRes.ok && cleanData.cleaned) {
+                transcript = cleanData.cleaned;
+            } else {
+                console.warn('AI cleaning failed, using raw transcript:', cleanData.error);
+            }
+        } catch (e) {
+            console.warn('AI cleaning unavailable, using raw transcript:', e);
+        }
+
         stageSummarize.classList.remove('active');
         stageSummarize.classList.add('done');
 

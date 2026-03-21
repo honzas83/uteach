@@ -1,7 +1,10 @@
 import os
+import re
+import json
 import uuid
 import threading
 import requests
+import boto3
 from flask import Flask, request, jsonify, send_from_directory
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -108,6 +111,109 @@ def status(task_id):
     if task is None:
         return jsonify({'error': 'Task not found'}), 404
     return jsonify(task)
+
+
+@app.route('/parse-students', methods=['POST'])
+def parse_students():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    f = request.files['file']
+    filename = f.filename.lower()
+
+    try:
+        if filename.endswith('.pdf'):
+            import pdfplumber
+            names = []
+            with pdfplumber.open(f) as pdf:
+                for page in pdf.pages:
+                    tables = page.extract_tables()
+                    for table in tables:
+                        for row in table:
+                            if not row or len(row) < 2:
+                                continue
+                            # Column "Příjmení a jméno" — typically second column
+                            for cell in row:
+                                if not cell or not isinstance(cell, str):
+                                    continue
+                                cell = cell.strip()
+                                # Skip headers and non-name cells
+                                if cell in ('Příjmení a jméno', 'Poř.', 'Os. číslo',
+                                            'Poznámka', 'Týden', ''):
+                                    continue
+                                # Skip cells that look like student IDs (A25B0489P)
+                                if re.match(r'^A\d{2}B\d{4}P$', cell):
+                                    continue
+                                # Skip pure numbers
+                                if re.match(r'^\d+\.?$', cell):
+                                    continue
+                                # Match "SURNAME Firstname" pattern (uppercase + mixed)
+                                if re.match(r'^[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]{2,}', cell):
+                                    # Convert "AKSMANN Petr" → "Petr Aksmann"
+                                    parts = cell.split()
+                                    if len(parts) >= 2:
+                                        surname = parts[0].title()
+                                        first = ' '.join(parts[1:])
+                                        names.append(f"{first} {surname}")
+            return jsonify({'names': names})
+
+        elif filename.endswith('.csv') or filename.endswith('.txt'):
+            content = f.read().decode('utf-8')
+            names = [n.strip() for n in content.replace('\n', ',').split(',') if n.strip()]
+            return jsonify({'names': names})
+
+        else:
+            return jsonify({'error': 'Unsupported file format. Use PDF, CSV, or TXT.'}), 400
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to parse file: {str(e)}'}), 500
+
+
+@app.route('/clean', methods=['POST'])
+def clean_transcript():
+    data = request.get_json()
+    if not data or 'transcript' not in data:
+        return jsonify({'error': 'No transcript provided'}), 400
+
+    transcript = data['transcript']
+    student_names = data.get('student_names', [])
+
+    names_instruction = ""
+    if student_names:
+        names_list = ", ".join(student_names)
+        names_instruction = (
+            f"\n3. Replace any mention of these student names with '[student]': {names_list}. "
+            "Also catch partial matches, nicknames, or misspellings of these names."
+        )
+
+    prompt = f"""You are a text editor. Process the following lecture transcript according to these rules:
+
+1. Remove all political discussions, political opinions, political debates, and any politically charged content. Replace removed sections with '[politicky obsah odstranen]'.
+2. Keep all educational, academic, and lecture-related content intact.{names_instruction}
+4. Do NOT add any commentary, explanations, or notes. Return ONLY the cleaned transcript.
+5. Preserve the original language of the transcript. Do not translate.
+6. Preserve paragraph structure and formatting.
+
+Transcript:
+{transcript}"""
+
+    try:
+        bedrock = boto3.client('bedrock-runtime', region_name=os.environ.get('AWS_REGION', 'eu-central-1'))
+        response = bedrock.invoke_model(
+            modelId='anthropic.claude-3-haiku-20240307-v1:0',
+            contentType='application/json',
+            accept='application/json',
+            body=json.dumps({
+                'anthropic_version': 'bedrock-2023-05-31',
+                'max_tokens': 4096,
+                'messages': [{'role': 'user', 'content': prompt}]
+            })
+        )
+        result = json.loads(response['body'].read())
+        cleaned = result['content'][0]['text']
+        return jsonify({'cleaned': cleaned})
+    except Exception as e:
+        return jsonify({'error': f'AI processing failed: {str(e)}'}), 500
 
 
 if __name__ == '__main__':

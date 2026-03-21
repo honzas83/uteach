@@ -715,6 +715,62 @@ body {
     box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
+/* ---- Students Bar ---- */
+.students-bar {
+    margin-top: 14px;
+    margin-bottom: -4px;
+}
+
+.students-bar label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.students-bar label svg { width: 14px; height: 14px; }
+
+.students-bar textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-bold);
+    border-radius: var(--r-sm);
+    background: var(--bg-card);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.82rem;
+    resize: vertical;
+    transition: all var(--dur) var(--ease);
+    box-sizing: border-box;
+}
+
+.students-bar textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.student-upload-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.student-file-info {
+    font-size: 0.78rem;
+    color: var(--text-3);
+}
+
+.student-manual {
+    font-size: 0.78rem;
+}
+
 /* ---- Buttons ---- */
 .btn {
     display: inline-flex;

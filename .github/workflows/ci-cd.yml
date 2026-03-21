@@ -155,7 +155,7 @@ jobs:
     name: "🚀 Deploy to ECS"
     runs-on: ubuntu-latest
     needs: [build, security]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/frontend')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
 
     steps:
@@ -209,7 +209,7 @@ jobs:
     name: "💨 Smoke Test"
     runs-on: ubuntu-latest
     needs: deploy
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/frontend')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Wait for deployment propagation
@@ -222,15 +222,23 @@ jobs:
           role-session-name: GitHubActions-smoketest-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get ALB URL
+      - name: Get CloudFront URL
         id: alb
         run: |
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --names webapp-alb \
-            --query 'LoadBalancers[0].DNSName' \
+          CF_DOMAIN=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='webapp — HTTPS via CloudFront'].DomainName | [0]" \
             --output text)
-          echo "url=http://$ALB_DNS" >> $GITHUB_OUTPUT
-          echo "ALB URL: http://$ALB_DNS"
+          if [ "$CF_DOMAIN" = "None" ] || [ -z "$CF_DOMAIN" ]; then
+            ALB_DNS=$(aws elbv2 describe-load-balancers \
+              --names webapp-alb \
+              --query 'LoadBalancers[0].DNSName' \
+              --output text)
+            echo "url=http://$ALB_DNS" >> $GITHUB_OUTPUT
+            echo "URL: http://$ALB_DNS (ALB fallback)"
+          else
+            echo "url=https://$CF_DOMAIN" >> $GITHUB_OUTPUT
+            echo "URL: https://$CF_DOMAIN"
+          fi
 
       - name: Health endpoint check
         run: |

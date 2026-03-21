@@ -45,5 +45,10 @@ output "public_subnet_ids" {
 
 output "app_url" {
   description = "URL aplikace"
-  value       = var.certificate_arn != "" ? "https://${var.domain_name != "" ? var.domain_name : aws_lb.main.dns_name}" : "http://${aws_lb.main.dns_name}"
+  value       = "https://${aws_cloudfront_distribution.main.domain_name}"
+}
+
+output "cloudfront_domain" {
+  description = "CloudFront HTTPS domain"
+  value       = aws_cloudfront_distribution.main.domain_name
 }
