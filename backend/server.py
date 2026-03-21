@@ -36,15 +36,14 @@ FRONTEND_DIR = (
     else _frontend_parent
 )
 
-OUTPUT_FILE = os.path.join(BASE_DIR, 'text.txt')
 PDF_DIR = os.path.join(BASE_DIR, 'pdfs')
 PROMPTS_FILE = os.path.join(
-    BASE_DIR, 'prompts', 'cs_claude_sonnet.yaml'
+    BASE_DIR, 'prompts', 'promptQWEN.yaml'
 )
 # Fallback: prompts may be one level up (local dev)
 if not os.path.exists(PROMPTS_FILE):
     PROMPTS_FILE = os.path.join(
-        BASE_DIR, '..', 'prompts', 'cs_claude_sonnet.yaml'
+        BASE_DIR, '..', 'prompts', 'promptQWEN.yaml'
     )
 
 os.makedirs(PDF_DIR, exist_ok=True)
@@ -100,7 +99,7 @@ else:
 OLLAMA_HOST = 'https://ollama.kky.zcu.cz'
 OLLAMA_USER = 'hackathon2026'
 OLLAMA_PASS = 'pheboa4zeesh4Kie'
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3:14b')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'ministral-3:8b')
 
 # ── KKY ASR ───────────────────────────────────────────────────────
 UWEBASR_BASE_URL = 'https://uwebasr.zcu.cz/api/v2/lindat'
@@ -247,11 +246,13 @@ def _ollama_client():
     return OllamaClient(
         host=OLLAMA_HOST,
         auth=httpx.DigestAuth(OLLAMA_USER, OLLAMA_PASS),
+        timeout=httpx.Timeout(300.0, connect=15.0),
     )
 
 
 def call_ollama(
     prompt_id: str, subject_code: str, transcript: str,
+    custom_instructions: str = '',
 ):
     """Call university Ollama for one YAML prompt."""
     logging.info(
@@ -264,6 +265,11 @@ def call_ollama(
         system = prompt_cfg['template'].format(
             subject_code=subject_code,
         )
+        if custom_instructions:
+            system += (
+                f'\n\nDodatečné instrukce od uživatele: '
+                f'{custom_instructions}'
+            )
         response = client.chat(
             model=OLLAMA_MODEL,
             stream=False,
@@ -285,7 +291,10 @@ def call_ollama(
         )
         return result
     except Exception as e:
-        logging.error('Ollama [%s] failed: %s', prompt_id, e)
+        logging.error(
+            'Ollama [%s] failed: %s: %s',
+            prompt_id, type(e).__name__, e,
+        )
         raise
 
 
@@ -307,7 +316,10 @@ def call_ollama_raw(system: str, user_msg: str):
         logging.info('Ollama raw call done (%d chars)', len(result))
         return result
     except Exception as e:
-        logging.error('Ollama raw call failed: %s', e)
+        logging.error(
+            'Ollama raw call failed: %s: %s',
+            type(e).__name__, e,
+        )
         raise
 
 
@@ -315,15 +327,84 @@ def call_ollama_raw(system: str, user_msg: str):
 # Background processing
 # ══════════════════════════════════════════════════════════════════
 
+# Video extensions that need audio extraction via ffmpeg
+_VIDEO_EXTENSIONS = {
+    '.mp4', '.mpeg', '.mpg', '.avi', '.mkv', '.mov', '.wmv',
+}
+
+
+def _extract_audio(file_data: bytes, filename: str) -> bytes:
+    """Extract audio from video using ffmpeg. Returns WAV bytes."""
+    import subprocess
+    import tempfile
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _VIDEO_EXTENSIONS:
+        return file_data
+
+    logging.info('Extracting audio from video (%s, %d bytes)',
+                 ext, len(file_data))
+    with tempfile.NamedTemporaryFile(
+        suffix=ext, delete=False,
+    ) as tmp_in:
+        tmp_in.write(file_data)
+        tmp_in_path = tmp_in.name
+
+    tmp_out_path = tmp_in_path + '.wav'
+    try:
+        subprocess.run(
+            [
+                'ffmpeg', '-i', tmp_in_path,
+                '-vn',              # no video
+                '-acodec', 'pcm_s16le',
+                '-ar', '16000',     # 16kHz for ASR
+                '-ac', '1',         # mono
+                '-y',               # overwrite
+                tmp_out_path,
+            ],
+            capture_output=True, timeout=300,
+            check=True,
+        )
+        with open(tmp_out_path, 'rb') as f:
+            audio_data = f.read()
+        logging.info('Audio extracted: %d bytes', len(audio_data))
+        return audio_data
+    except FileNotFoundError:
+        logging.warning('ffmpeg not found, sending raw file to ASR')
+        return file_data
+    except subprocess.CalledProcessError as e:
+        logging.error('ffmpeg failed: %s', e.stderr[:500])
+        raise RuntimeError(
+            f'Failed to extract audio: {e.stderr[:200]}'
+        )
+    finally:
+        for p in (tmp_in_path, tmp_out_path):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+
+
 def process_task(
     task_id: str, file_data: bytes,
     lang: str, subject_code: str,
+    filename: str = 'upload',
+    custom_instructions: str = '',
 ):
     t = tasks[task_id]
     logging.info(
-        'Task %s: started (lang=%s, %d bytes)',
-        task_id[:8], lang, len(file_data),
+        'Task %s: started (lang=%s, %d bytes, file=%s)',
+        task_id[:8], lang, len(file_data), filename,
     )
+
+    # 0. Extract audio from video if needed
+    try:
+        file_data = _extract_audio(file_data, filename)
+    except RuntimeError as e:
+        logging.error('Task %s: audio extraction failed: %s',
+                      task_id[:8], e)
+        t.update(status='error', error=str(e))
+        return
 
     # 1. Transcription
     app_id = LANGUAGE_MODELS.get(lang, 'generic/cs/zipformer')
@@ -368,8 +449,6 @@ def process_task(
         t.update(status='error', error=f'Network error: {e}')
         return
 
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as fh:
-        fh.write(transcript)
     t['result'] = transcript
 
     # 2. AI summarisation via Ollama (parallel)
@@ -387,6 +466,7 @@ def process_task(
         def _run_prompt(pid):
             return pid, call_ollama(
                 pid, subject_code, transcript,
+                custom_instructions,
             )
 
         with ThreadPoolExecutor(max_workers=3) as pool:
@@ -468,6 +548,10 @@ def transcribe():
         or 'KKY'
     )
     file_data = f.read()
+    filename = f.filename or 'upload'
+    custom_instructions = (
+        request.form.get('custom_instructions', '').strip()
+    )
 
     task_id = str(uuid.uuid4())
     tasks[task_id] = {
@@ -480,7 +564,10 @@ def transcribe():
 
     threading.Thread(
         target=process_task,
-        args=(task_id, file_data, lang, subject_code),
+        args=(
+            task_id, file_data, lang, subject_code,
+            filename, custom_instructions,
+        ),
         daemon=True,
     ).start()
     return jsonify({'task_id': task_id})
@@ -673,22 +760,29 @@ def summarize():
 
     transcript = data['transcript']
 
-    system = (
-        "You are an academic assistant. Create a concise "
-        "summary of the lecture transcript.\n"
-        "Rules:\n"
-        "1. Write in the SAME language as the transcript.\n"
-        "2. Use bullet points for key topics.\n"
-        "3. Keep it under 300 words.\n"
-        "4. Start with a one-sentence overview.\n"
-        "5. Then list the main points covered.\n"
-        "6. Do NOT add information not in the transcript.\n"
-        "7. Do NOT include any meta-commentary."
-    )
+    # Use YAML prompt if available, otherwise fallback
+    if 'lecture_summary' in PROMPTS:
+        prompt_cfg = PROMPTS['lecture_summary']
+        system = prompt_cfg['template'].format(
+            subject_code='KKY',
+        )
+    else:
+        system = (
+            "Jsi akademický asistent. Vytvoř stručné shrnutí "
+            "přepisu přednášky.\n"
+            "Pravidla:\n"
+            "1. Piš ve STEJNÉM jazyce jako přepis.\n"
+            "2. Použij odrážky pro klíčová témata.\n"
+            "3. Nepřekračuj 300 slov.\n"
+            "4. Začni jednou větou přehledu.\n"
+            "5. Pak uveď hlavní probírané body.\n"
+            "6. NEPŘIDÁVEJ informace, které nejsou v přepisu.\n"
+            "7. NEZAHRNUJ žádný meta-komentář."
+        )
 
     try:
         summary = call_ollama_raw(
-            system, f"Transcript:\n{transcript}",
+            system, f"Přepis přednášky:\n\n{transcript}",
         )
         return jsonify({'summary': summary})
     except Exception as e:

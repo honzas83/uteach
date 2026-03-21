@@ -36,7 +36,7 @@ def test_static_css(client):
 
 def test_static_js(client):
     """JS files are served."""
-    resp = client.get('/app.js')
+    resp = client.get('/main.js')
     assert resp.status_code == 200
 
 
