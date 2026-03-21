@@ -252,6 +252,7 @@ def _ollama_client():
 
 def call_ollama(
     prompt_id: str, subject_code: str, transcript: str,
+    custom_instructions: str = '',
 ):
     """Call university Ollama for one YAML prompt."""
     logging.info(
@@ -264,6 +265,11 @@ def call_ollama(
         system = prompt_cfg['template'].format(
             subject_code=subject_code,
         )
+        if custom_instructions:
+            system += (
+                f'\n\nDodatečné instrukce od uživatele: '
+                f'{custom_instructions}'
+            )
         response = client.chat(
             model=OLLAMA_MODEL,
             stream=False,
@@ -383,6 +389,7 @@ def process_task(
     task_id: str, file_data: bytes,
     lang: str, subject_code: str,
     filename: str = 'upload',
+    custom_instructions: str = '',
 ):
     t = tasks[task_id]
     logging.info(
@@ -459,6 +466,7 @@ def process_task(
         def _run_prompt(pid):
             return pid, call_ollama(
                 pid, subject_code, transcript,
+                custom_instructions,
             )
 
         with ThreadPoolExecutor(max_workers=3) as pool:
@@ -541,6 +549,9 @@ def transcribe():
     )
     file_data = f.read()
     filename = f.filename or 'upload'
+    custom_instructions = (
+        request.form.get('custom_instructions', '').strip()
+    )
 
     task_id = str(uuid.uuid4())
     tasks[task_id] = {
@@ -553,7 +564,10 @@ def transcribe():
 
     threading.Thread(
         target=process_task,
-        args=(task_id, file_data, lang, subject_code, filename),
+        args=(
+            task_id, file_data, lang, subject_code,
+            filename, custom_instructions,
+        ),
         daemon=True,
     ).start()
     return jsonify({'task_id': task_id})

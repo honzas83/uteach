@@ -737,6 +737,8 @@
       }
       fd.append('language', 'cs');
       fd.append('subject_code', 'KKY');
+      const ci = dom.customInstructions.value.trim();
+      if (ci) fd.append('custom_instructions', ci);
 
       fetch('/transcribe', { method: 'POST', body: fd })
         .then(r => r.json())
@@ -867,7 +869,11 @@
 
       // Show real summary or error
       if (state.taskError && !state.summaryText) {
-        dom.summaryContent.innerHTML = '<p class="text-red-500">Chyba: ' + state.taskError + '</p>';
+        const errEl = document.createElement('p');
+        errEl.className = 'text-red-500';
+        errEl.textContent = 'Chyba: ' + state.taskError;
+        dom.summaryContent.innerHTML = '';
+        dom.summaryContent.appendChild(errEl);
       } else if (state.summaryText) {
         dom.summaryContent.innerHTML = '<div class="prose dark:prose-invert text-sm leading-relaxed">' + mdToHtml(state.summaryText) + '</div>';
       } else {
@@ -1041,7 +1047,7 @@
     const mid = rect.height / 2;
 
     function animate(ts) {
-      if (state.isRecording) return;
+      if (state.isRecording || state.currentStep !== 1) return;
       const isDark = document.documentElement.classList.contains('dark');
       const t = ts * 0.001; // seconds
       ctx.clearRect(0, 0, rect.width, rect.height);
