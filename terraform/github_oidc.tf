@@ -128,7 +128,10 @@ resource "aws_iam_role_policy" "github_actions_ecs" {
       {
         # Smoke test — zjištění CloudFront domény
         Effect   = "Allow"
-        Action   = "cloudfront:ListDistributions"
+        Action   = [
+          "cloudfront:ListDistributions",
+          "cloudfront:CreateInvalidation"
+        ]
         Resource = "*"
       }
     ]

@@ -203,6 +203,18 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: false
 
+      - name: Invalidate CloudFront cache
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Comment=='webapp — HTTPS via CloudFront'].Id | [0]" \
+            --output text)
+          if [ "$DIST_ID" != "None" ] && [ -n "$DIST_ID" ]; then
+            aws cloudfront create-invalidation --distribution-id "$DIST_ID" --paths "/*"
+            echo "✅ CloudFront cache invalidated ($DIST_ID)"
+          else
+            echo "⚠️ CloudFront distribution not found, skipping"
+          fi
+
   # ━━━━━━━━━━━━━━━━ STAGE 6: SMOKE TEST ━━━━━━━━━━━━━━━━
   smoke-test:
     name: "💨 Smoke Test"
