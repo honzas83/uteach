@@ -223,13 +223,23 @@ def clean_transcript():
 
     transcript = data['transcript']
     student_names = data.get('student_names', [])
+    custom_prompt = data.get('custom_prompt', '')
 
     names_instruction = ""
     if student_names:
         names_list = ", ".join(student_names)
         names_instruction = (
-            f"\n3. Replace any mention of these student names with '[student]': {names_list}. "
-            "Also catch partial matches, nicknames, or misspellings of these names."
+            "\n3. Replace any mention of these student "
+            "names with '[student]': "
+            f"{names_list}. "
+            "Also catch partial matches, nicknames, "
+            "or misspellings of these names."
+        )
+
+    custom_instruction = ""
+    if custom_prompt:
+        custom_instruction = (
+            f"\n7. Additional instructions: {custom_prompt}"
         )
 
     prompt = (
@@ -246,7 +256,8 @@ def clean_transcript():
         "Return ONLY the cleaned transcript.\n"
         "5. Preserve the original language of the transcript. "
         "Do not translate.\n"
-        "6. Preserve paragraph structure and formatting.\n\n"
+        "6. Preserve paragraph structure and formatting."
+        f"{custom_instruction}\n\n"
         f"Transcript:\n{transcript}"
     )
 

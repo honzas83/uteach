@@ -33,18 +33,29 @@
     const toast        = $('#toast');
     const toastMsg     = $('#toastMessage');
     const langSelect   = $('#langSelect');
-    const studentNames = $('#studentNames');
-    const studentFile  = $('#studentFile');
-    const studentFileBtn = $('#studentFileBtn');
-    const studentFileInfo = $('#studentFileInfo');
     const copyTranscript = $('#copyTranscript');
     const copySummary  = $('#copySummary');
     const downloadPdf  = $('#downloadPdf');
     const newSession   = $('#newSession');
 
+    // Privacy modal DOM
+    const privacyModal   = $('#privacyModal');
+    const privacyClose   = $('#privacyModalClose');
+    const privacySkip    = $('#privacySkip');
+    const privacyConfirm = $('#privacyConfirm');
+    const studentDropzone   = $('#studentDropzone');
+    const studentFileInput  = $('#studentFileInput');
+    const studentBrowseBtn  = $('#studentBrowseBtn');
+    const studentFileTag    = $('#studentFileTag');
+    const studentFileName   = $('#studentFileName');
+    const studentFileRemove = $('#studentFileRemove');
+    const privacyPrompt     = $('#privacyPrompt');
+
     // State
     let currentFile = null;
     let recordedBlob = null;
+    let studentFile = null;
+    let privacyText = '';
     let isRecording = false;
     let recInterval = null;
     let recSec = 0;
@@ -131,8 +142,8 @@
     });
 
     function handleFile(file) {
-        if (!file.type.startsWith('audio/')) {
-            showToast('Vyberte prosim zvukovy soubor');
+        if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
+            showToast('Vyberte prosím zvukový nebo video soubor');
             return;
         }
         currentFile = file;
@@ -175,55 +186,26 @@
                 o.textContent = m.label || `Mikrofon ${i + 1}`;
                 micSelect.appendChild(o);
             });
-            micsLoaded = true;
         } catch {
-            micSelect.innerHTML = '<option value="">Mikrofon nedostupny</option>';
+            micSelect.innerHTML = '<option value="">Mikrofon nedostupný</option>';
         }
+        micsLoaded = true;
     }
-
-    /* ---- Student List Upload ---- */
-    let parsedStudentNames = [];
-
-    studentFileBtn.addEventListener('click', () => studentFile.click());
-
-    studentFile.addEventListener('change', async () => {
-        if (!studentFile.files.length) return;
-        const file = studentFile.files[0];
-        studentFileInfo.textContent = file.name;
-
-        const formData = new FormData();
-        formData.append('file', file);
-
-        try {
-            const res = await fetch('/parse-students', { method: 'POST', body: formData });
-            const data = await res.json();
-            if (res.ok && data.names) {
-                parsedStudentNames = data.names;
-                studentNames.value = data.names.join(', ');
-                showToast(`Nacteno ${data.names.length} jmen`);
-            } else {
-                showToast(data.error || 'Chyba pri nacitani seznamu');
-            }
-        } catch {
-            showToast('Nelze nacist seznam studentu');
-        }
-    });
 
     /* ---- Recording (via AutoBackupAudioRecorder) ---- */
     recordBtn.addEventListener('click', () => isRecording ? stopRec() : startRec());
 
     async function startRec() {
         try {
-            // Start backup recorder with selected microphone
-            const selectedDeviceId = micSelect.value || undefined;
-            await backupRecorder.start(selectedDeviceId);
+            // Start backup recorder — it requests getUserMedia internally
+            await backupRecorder.start();
 
             // Get the live stream from the recorder for waveform viz
             liveStream = backupRecorder.stream;
 
             isRecording = true;
             recordBtn.classList.add('recording');
-            recorderHint.textContent = 'Nahravani... kliknete pro zastaveni';
+            recorderHint.textContent = 'Nahrávání... klikněte pro zastavení';
             micSelect.disabled = true;
 
             recSec = 0;
@@ -237,7 +219,7 @@
 
             if (liveStream) initWave(liveStream);
         } catch {
-            showToast('Nelze pristoupit k mikrofonu');
+            showToast('Nelze přistoupit k mikrofonu');
         }
     }
 
@@ -245,7 +227,7 @@
         // Stop waveform & timer immediately for responsive UI
         isRecording = false;
         recordBtn.classList.remove('recording');
-        recorderHint.textContent = 'Stisknete pro nahravani';
+        recorderHint.textContent = 'Stiskněte pro nahrávání';
         micSelect.disabled = false;
         clearInterval(recInterval);
         if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
@@ -263,7 +245,7 @@
             }
         } catch (err) {
             console.error('Stop recording failed:', err);
-            showToast('Chyba pri zastaveni nahravani');
+            showToast('Chyba při zastavení nahrávání');
         }
     }
 
@@ -296,7 +278,7 @@
                 panelUpload.classList.remove('active');
                 recPreview.classList.remove('hidden');
                 updateSubmit();
-                showToast('Obnovena predchozi nahravka');
+                showToast('Obnovena předchozí nahrávka');
             }
         } catch {
             // No session to recover — that's fine
@@ -364,8 +346,73 @@
 
     submitBtn.addEventListener('click', () => {
         if (submitBtn.disabled) return;
+        openPrivacyModal();
+    });
+
+    /* ---- Privacy Modal ---- */
+    function openPrivacyModal() {
+        privacyModal.classList.remove('hidden');
+    }
+    function closePrivacyModal() {
+        privacyModal.classList.add('hidden');
+    }
+
+    privacyClose.addEventListener('click', closePrivacyModal);
+    privacyModal.addEventListener('click', (e) => {
+        if (e.target === privacyModal) closePrivacyModal();
+    });
+
+    privacySkip.addEventListener('click', () => {
+        studentFile = null;
+        privacyText = '';
+        privacyPrompt.value = '';
+        studentFileTag.classList.add('hidden');
+        studentDropzone.style.display = '';
+        closePrivacyModal();
         goToStep(2);
         runProcessing();
+    });
+
+    privacyConfirm.addEventListener('click', () => {
+        privacyText = privacyPrompt.value.trim();
+        closePrivacyModal();
+        goToStep(2);
+        runProcessing();
+    });
+
+    // Student file upload
+    studentBrowseBtn.addEventListener('click', (e) => { e.stopPropagation(); studentFileInput.click(); });
+    studentDropzone.addEventListener('click', () => studentFileInput.click());
+
+    studentDropzone.addEventListener('dragover', (e) => { e.preventDefault(); studentDropzone.classList.add('dragover'); });
+    studentDropzone.addEventListener('dragleave', () => studentDropzone.classList.remove('dragover'));
+    studentDropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        studentDropzone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) handleStudentFile(e.dataTransfer.files[0]);
+    });
+
+    studentFileInput.addEventListener('change', () => {
+        if (studentFileInput.files.length) handleStudentFile(studentFileInput.files[0]);
+    });
+
+    function handleStudentFile(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (ext !== 'csv' && ext !== 'pdf') {
+            showToast('Vyberte prosím soubor CSV nebo PDF');
+            return;
+        }
+        studentFile = file;
+        studentFileName.textContent = file.name;
+        studentFileTag.classList.remove('hidden');
+        studentDropzone.style.display = 'none';
+    }
+
+    studentFileRemove.addEventListener('click', () => {
+        studentFile = null;
+        studentFileInput.value = '';
+        studentFileTag.classList.add('hidden');
+        studentDropzone.style.display = '';
     });
 
     async function runProcessing() {
@@ -384,7 +431,7 @@
         } else if (recordedBlob) {
             formData.append('file', recordedBlob, 'recording.webm');
         } else {
-            showToast('Zadny soubor k odeslani');
+            showToast('Žádný soubor k odeslání');
             goToStep(1);
             return;
         }
@@ -395,14 +442,14 @@
             const res = await fetch('/transcribe', { method: 'POST', body: formData });
             const data = await res.json();
             if (!res.ok || data.error) {
-                showToast(data.error || 'Chyba pri odeslani souboru');
+                showToast(data.error || 'Chyba při odeslání souboru');
                 goToStep(1);
                 stageTranscribe.classList.remove('active');
                 return;
             }
             taskId = data.task_id;
         } catch (e) {
-            showToast('Nelze se pripojit k serveru. Spustte server.py');
+            showToast('Nelze se připojit k serveru. Spusťte server.py');
             goToStep(1);
             stageTranscribe.classList.remove('active');
             return;
@@ -419,14 +466,14 @@
                     transcript = statusData.result;
                     break;
                 } else if (statusData.status === 'error') {
-                    showToast(statusData.error || 'Chyba pri transkripci');
+                    showToast(statusData.error || 'Chyba při transkripci');
                     goToStep(1);
                     stageTranscribe.classList.remove('active');
                     return;
                 }
                 // still processing — keep polling
             } catch {
-                showToast('Ztrata spojeni se serverem');
+                showToast('Ztráta spojení se serverem');
                 goToStep(1);
                 stageTranscribe.classList.remove('active');
                 return;
@@ -436,14 +483,26 @@
         stageTranscribe.classList.remove('active');
         stageTranscribe.classList.add('done');
 
-        // --- Stage 2: AI cleaning (remove politics + student names) ---
+        // --- Stage 2: AI cleaning (privacy + student names) ---
         stageSummarize.classList.add('active');
 
-        const names = studentNames.value
-            .split(',')
-            .map(n => n.trim())
-            .filter(Boolean);
-        const allNames = [...new Set([...parsedStudentNames, ...names])];
+        // Parse student names from uploaded file
+        let studentNames = [];
+        if (studentFile) {
+            try {
+                const sf = new FormData();
+                sf.append('file', studentFile);
+                const parseRes = await fetch('/parse-students', {
+                    method: 'POST', body: sf
+                });
+                const parseData = await parseRes.json();
+                if (parseRes.ok && parseData.names) {
+                    studentNames = parseData.names;
+                }
+            } catch (e) {
+                console.warn('Student file parse failed:', e);
+            }
+        }
 
         try {
             const cleanRes = await fetch('/clean', {
@@ -451,17 +510,18 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     transcript: transcript,
-                    student_names: allNames
+                    student_names: studentNames,
+                    custom_prompt: privacyText
                 })
             });
             const cleanData = await cleanRes.json();
             if (cleanRes.ok && cleanData.cleaned) {
                 transcript = cleanData.cleaned;
             } else {
-                console.warn('AI cleaning failed, using raw transcript:', cleanData.error);
+                console.warn('AI cleaning failed:', cleanData.error);
             }
         } catch (e) {
-            console.warn('AI cleaning unavailable, using raw transcript:', e);
+            console.warn('AI cleaning unavailable:', e);
         }
 
         stageSummarize.classList.remove('active');
@@ -488,18 +548,18 @@
                 body.appendChild(p);
             });
         } else {
-            body.innerHTML = '<p>Transkripce nebyla ziskana.</p>';
+            body.innerHTML = '<p>Transkripce nebyla získána.</p>';
         }
-        $('#summaryBody').innerHTML = '<p><em>AI sumarizace bude dostupna po pripojeni modelu.</em></p>';
+        $('#summaryBody').innerHTML = '<p><em>AI sumarizace bude dostupná po připojení modelu.</em></p>';
     }
 
     /* ---- Results Actions ---- */
-    copyTranscript.addEventListener('click', () => copyTxt($('#transcriptBody').innerText, 'Transkript zkopirovan'));
-    copySummary.addEventListener('click', () => copyTxt($('#summaryBody').innerText, 'Shrnuti zkopirovano'));
+    copyTranscript.addEventListener('click', () => copyTxt($('#transcriptBody').innerText, 'Transkript zkopírován'));
+    copySummary.addEventListener('click', () => copyTxt($('#summaryBody').innerText, 'Shrnutí zkopírováno'));
 
     function copyTxt(t, m) { navigator.clipboard.writeText(t).then(() => showToast(m)); }
 
-    downloadPdf.addEventListener('click', () => showToast('PDF bude k dispozici po pripojeni backendu'));
+    downloadPdf.addEventListener('click', () => showToast('PDF bude k dispozici po připojení backendu'));
     newSession.addEventListener('click', resetApp);
 
     async function resetApp() {
@@ -509,6 +569,12 @@
         }
         currentFile = null;
         recordedBlob = null;
+        studentFile = null;
+        privacyText = '';
+        privacyPrompt.value = '';
+        studentFileInput.value = '';
+        studentFileTag.classList.add('hidden');
+        studentDropzone.style.display = '';
         fileInput.value = '';
         audioPlayer.src = '';
         recordedAudio.src = '';
