@@ -37,6 +37,7 @@
     recordingPreview: $('#recordingPreview'),
     recordingDuration:$('#recordingDuration'),
     discardRecording: $('#discardRecording'),
+    downloadRecording:$('#downloadRecording'),
     submitBtn:        $('#submitBtn'),
     submitText:       $('#submitText'),
     btnSpinner:       $('#btnSpinner'),
@@ -426,6 +427,27 @@
       else startRecording();
     });
     dom.discardRecording.addEventListener('click', discardRecording);
+    dom.downloadRecording.addEventListener('click', async () => {
+      if (!state.recordedBlob) return;
+      showToast('Převádím na MP3…');
+      try {
+        const mp3Blob = await convertToMp3(state.recordedBlob);
+        const url = URL.createObjectURL(mp3Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'uteach-nahravka.mp3';
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        // Fallback: download raw webm
+        const url = URL.createObjectURL(state.recordedBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'uteach-nahravka.webm';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    });
   }
 
   /* ═══════════════ WAVEFORM (CANVAS) ═══════════════ */
