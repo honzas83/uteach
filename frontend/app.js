@@ -531,18 +531,33 @@
         stageSummarize.classList.remove('active');
         stageSummarize.classList.add('done');
 
-        // --- Stage 3: PDF (placeholder) ---
+        // --- Stage 3: AI summarization ---
         stagePdf.classList.add('active');
-        await delay(500);
+
+        let summaryText = '';
+        try {
+            const sumRes = await fetch('/summarize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transcript: transcript })
+            });
+            const sumData = await sumRes.json();
+            if (sumRes.ok && sumData.summary) {
+                summaryText = sumData.summary;
+            }
+        } catch (e) {
+            console.warn('Summarization failed:', e);
+        }
+
         stagePdf.classList.remove('active');
         stagePdf.classList.add('done');
 
         await delay(300);
         goToStep(3);
-        fillResults(transcript, aiUsed ? rawTranscript : null);
+        fillResults(transcript, summaryText, aiUsed ? rawTranscript : null);
     }
 
-    function fillResults(transcript, rawTranscript) {
+    function fillResults(transcript, summaryText, rawTranscript) {
         const body = $('#transcriptBody');
         body.innerHTML = '';
         if (transcript) {
@@ -556,51 +571,60 @@
         }
 
         const summary = $('#summaryBody');
+        let html = '';
+
+        // AI summary
+        if (summaryText) {
+            html += '<div style="margin-bottom:16px;">';
+            summaryText.split('\n').filter(Boolean).forEach(line => {
+                html += '<p>' + escHtml(line) + '</p>';
+            });
+            html += '</div>';
+        } else {
+            html += '<p><em>Shrnutí nebylo vygenerováno.</em></p>';
+        }
+
+        // AI cleaning diff
         if (rawTranscript && rawTranscript !== transcript) {
-            // Show what AI changed
-            const rawLines = rawTranscript.split('\n').filter(Boolean);
-            const cleanLines = transcript.split('\n').filter(Boolean);
-            const rawSet = new Set(rawLines);
+            html += '<hr style="border:none;border-top:1px solid '
+                + 'var(--border);margin:16px 0;">';
+            html += '<p style="font-weight:600;font-size:0.82rem;'
+                + 'margin-bottom:8px;">'
+                + '🔍 Změny AI čištění:</p>';
+
+            const rawLines = rawTranscript.split('\n')
+                .filter(Boolean);
+            const cleanLines = transcript.split('\n')
+                .filter(Boolean);
             const cleanSet = new Set(cleanLines);
+            const rawSet = new Set(rawLines);
 
             const removed = rawLines.filter(l => !cleanSet.has(l));
             const added = cleanLines.filter(l => !rawSet.has(l));
 
-            let html = '<p style="font-weight:600;margin-bottom:8px;">'
-                + '🔍 AI zpracování — změny:</p>';
-
             if (removed.length) {
-                html += '<p style="font-size:0.78rem;color:var(--text-2);">'
-                    + 'Odstraněno / změněno:</p>';
-                removed.forEach(l => {
-                    html += '<p style="color:#e53e3e;font-size:0.82rem;'
+                removed.slice(0, 10).forEach(l => {
+                    html += '<p style="color:#e53e3e;font-size:0.78rem;'
                         + 'text-decoration:line-through;opacity:0.7;">'
                         + escHtml(l) + '</p>';
                 });
+                if (removed.length > 10) {
+                    html += '<p style="color:var(--text-3);'
+                        + 'font-size:0.75rem;">...a dalších '
+                        + (removed.length - 10) + ' řádků</p>';
+                }
             }
 
             if (added.length) {
-                html += '<p style="font-size:0.78rem;color:var(--text-2);'
-                    + 'margin-top:8px;">Nahrazeno:</p>';
-                added.forEach(l => {
-                    html += '<p style="color:#38a169;font-size:0.82rem;">'
+                added.slice(0, 10).forEach(l => {
+                    html += '<p style="color:#38a169;'
+                        + 'font-size:0.78rem;">'
                         + escHtml(l) + '</p>';
                 });
             }
-
-            if (!removed.length && !added.length) {
-                html += '<p style="color:var(--text-3);">'
-                    + 'Žádné změny nebyly potřeba.</p>';
-            }
-
-            summary.innerHTML = html;
-        } else if (rawTranscript === null) {
-            summary.innerHTML = '<p><em>AI čištění nebylo použito.'
-                + '</em></p>';
-        } else {
-            summary.innerHTML = '<p><em>AI nezměnila žádný obsah.'
-                + '</em></p>';
         }
+
+        summary.innerHTML = html;
     }
 
     function escHtml(s) {

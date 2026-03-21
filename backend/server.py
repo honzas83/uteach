@@ -280,5 +280,55 @@ def clean_transcript():
         return jsonify({'error': f'AI processing failed: {str(e)}'}), 500
 
 
+@app.route('/summarize', methods=['POST'])
+def summarize():
+    data = request.get_json()
+    if not data or 'transcript' not in data:
+        return jsonify({'error': 'No transcript provided'}), 400
+
+    transcript = data['transcript']
+    lang = data.get('language', 'cs')
+
+    prompt = (
+        "You are an academic assistant. Create a concise "
+        "summary of the following lecture transcript.\n\n"
+        "Rules:\n"
+        "1. Write the summary in the SAME language as "
+        "the transcript.\n"
+        "2. Use bullet points for key topics.\n"
+        "3. Keep it under 300 words.\n"
+        "4. Start with a one-sentence overview.\n"
+        "5. Then list the main points covered.\n"
+        "6. Do NOT add information not in the transcript.\n"
+        "7. Do NOT include any meta-commentary.\n\n"
+        f"Transcript:\n{transcript}"
+    )
+
+    try:
+        bedrock = boto3.client(
+            'bedrock-runtime',
+            region_name=os.environ.get('AWS_REGION', 'eu-central-1')
+        )
+        response = bedrock.invoke_model(
+            modelId='anthropic.claude-3-haiku-20240307-v1:0',
+            contentType='application/json',
+            accept='application/json',
+            body=json.dumps({
+                'anthropic_version': 'bedrock-2023-05-31',
+                'max_tokens': 2048,
+                'messages': [
+                    {'role': 'user', 'content': prompt}
+                ]
+            })
+        )
+        result = json.loads(response['body'].read())
+        summary = result['content'][0]['text']
+        return jsonify({'summary': summary})
+    except Exception as e:
+        return jsonify({
+            'error': f'Summarization failed: {str(e)}'
+        }), 500
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5001, threaded=True)
