@@ -157,9 +157,55 @@ def parse_students():
                                         names.append(f"{first} {surname}")
             return jsonify({'names': names})
 
-        elif filename.endswith('.csv') or filename.endswith('.txt'):
+        elif filename.endswith('.csv'):
+            import csv
+            import io
             content = f.read().decode('utf-8')
-            names = [n.strip() for n in content.replace('\n', ',').split(',') if n.strip()]
+            reader = csv.reader(io.StringIO(content))
+            names = []
+            name_col = None
+            for row in reader:
+                if name_col is None:
+                    # Auto-detect name column from header
+                    for i, cell in enumerate(row):
+                        c = cell.strip().lower()
+                        if 'jméno' in c or 'jmeno' in c or 'name' in c:
+                            name_col = i
+                            break
+                    if name_col is not None:
+                        continue
+                    # No header found — try column 1 (index 1)
+                    name_col = 1 if len(row) > 1 else 0
+                if name_col >= len(row):
+                    continue
+                cell = row[name_col].strip()
+                if not cell:
+                    continue
+                # Skip headers/IDs/numbers
+                if re.match(r'^A\d{2}B\d{4}P$', cell):
+                    continue
+                if re.match(r'^\d+\.?$', cell):
+                    continue
+                # "SURNAME Firstname" → "Firstname Surname"
+                if re.match(
+                    r'^[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]{2,}', cell
+                ):
+                    parts = cell.split()
+                    if len(parts) >= 2:
+                        surname = parts[0].title()
+                        first = ' '.join(parts[1:])
+                        names.append(f"{first} {surname}")
+                        continue
+                names.append(cell)
+            return jsonify({'names': names})
+
+        elif filename.endswith('.txt'):
+            content = f.read().decode('utf-8')
+            names = [
+                n.strip() for n in
+                content.replace('\n', ',').split(',')
+                if n.strip()
+            ]
             return jsonify({'names': names})
 
         else:
