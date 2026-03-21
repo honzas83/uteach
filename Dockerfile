@@ -5,20 +5,17 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY server.py .
-COPY index.html .
-COPY styles.css .
-COPY app.js .
-COPY MediaRecorder-MediaBackUp.js .
-COPY logo.png .
-COPY text.txt .
+COPY backend/server.py .
+COPY backend/text.txt .
+
+COPY frontend/ frontend/
 
 EXPOSE 5001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:5001/ || exit 1
+    CMD curl -f http://localhost:5001/health || exit 1
 
 CMD ["python", "server.py"]

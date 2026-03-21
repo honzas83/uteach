@@ -9,3 +9,7 @@ terraform/
 Dockerfile
 README.md
 app.py.backend
+backend/tests/
+backend/__pycache__/
+.pytest_cache/
+.github/
