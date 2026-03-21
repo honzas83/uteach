@@ -5,7 +5,13 @@ import requests
 from flask import Flask, request, jsonify, send_from_directory
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, '..', 'frontend')
+
+# In Docker: /app/server.py + /app/frontend/
+# Locally:   backend/server.py + frontend/
+_frontend_same_level = os.path.join(BASE_DIR, 'frontend')
+_frontend_parent_level = os.path.join(BASE_DIR, '..', 'frontend')
+FRONTEND_DIR = _frontend_same_level if os.path.isdir(_frontend_same_level) else _frontend_parent_level
+
 OUTPUT_FILE = os.path.join(BASE_DIR, 'text.txt')
 
 app = Flask(__name__, static_folder=FRONTEND_DIR)
