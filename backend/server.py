@@ -99,7 +99,7 @@ else:
 OLLAMA_HOST = 'https://ollama.kky.zcu.cz'
 OLLAMA_USER = 'hackathon2026'
 OLLAMA_PASS = 'pheboa4zeesh4Kie'
-OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'qwen3:14b')
+OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'ministral-3:8b')
 
 # ── KKY ASR ───────────────────────────────────────────────────────
 UWEBASR_BASE_URL = 'https://uwebasr.zcu.cz/api/v2/lindat'
@@ -246,6 +246,7 @@ def _ollama_client():
     return OllamaClient(
         host=OLLAMA_HOST,
         auth=httpx.DigestAuth(OLLAMA_USER, OLLAMA_PASS),
+        timeout=httpx.Timeout(300.0, connect=15.0),
     )
 
 
@@ -284,7 +285,10 @@ def call_ollama(
         )
         return result
     except Exception as e:
-        logging.error('Ollama [%s] failed: %s', prompt_id, e)
+        logging.error(
+            'Ollama [%s] failed: %s: %s',
+            prompt_id, type(e).__name__, e,
+        )
         raise
 
 
@@ -306,7 +310,10 @@ def call_ollama_raw(system: str, user_msg: str):
         logging.info('Ollama raw call done (%d chars)', len(result))
         return result
     except Exception as e:
-        logging.error('Ollama raw call failed: %s', e)
+        logging.error(
+            'Ollama raw call failed: %s: %s',
+            type(e).__name__, e,
+        )
         raise
 
 
