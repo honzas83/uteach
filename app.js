@@ -32,6 +32,7 @@
     const submitBtn    = $('#submitBtn');
     const toast        = $('#toast');
     const toastMsg     = $('#toastMessage');
+    const langSelect   = $('#langSelect');
     const copyTranscript = $('#copyTranscript');
     const copySummary  = $('#copySummary');
     const downloadPdf  = $('#downloadPdf');
@@ -331,37 +332,103 @@
     });
 
     async function runProcessing() {
-        const stages = [
-            { id: 'stageTranscribe', ms: 2500 },
-            { id: 'stageSummarize',  ms: 2000 },
-            { id: 'stagePdf',       ms: 1500 }
-        ];
-        for (const s of stages) {
-            const el = $(`#${s.id}`);
-            el.classList.add('active');
-            await delay(s.ms);
-            el.classList.remove('active');
-            el.classList.add('done');
+        const stageTranscribe = $('#stageTranscribe');
+        const stageSummarize  = $('#stageSummarize');
+        const stagePdf        = $('#stagePdf');
+
+        // --- Stage 1: Transcription via backend ---
+        stageTranscribe.classList.add('active');
+
+        // Build FormData with the audio file
+        const formData = new FormData();
+        const isUpload = panelUpload.classList.contains('active');
+        if (isUpload && currentFile) {
+            formData.append('file', currentFile);
+        } else if (recordedBlob) {
+            formData.append('file', recordedBlob, 'recording.webm');
+        } else {
+            showToast('Zadny soubor k odeslani');
+            goToStep(1);
+            return;
         }
-        await delay(400);
+        formData.append('language', langSelect ? langSelect.value : 'cs');
+
+        let taskId;
+        try {
+            const res = await fetch('/transcribe', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!res.ok || data.error) {
+                showToast(data.error || 'Chyba pri odeslani souboru');
+                goToStep(1);
+                stageTranscribe.classList.remove('active');
+                return;
+            }
+            taskId = data.task_id;
+        } catch (e) {
+            showToast('Nelze se pripojit k serveru. Spustte server.py');
+            goToStep(1);
+            stageTranscribe.classList.remove('active');
+            return;
+        }
+
+        // Poll for transcription result
+        let transcript = null;
+        while (true) {
+            await delay(2000);
+            try {
+                const statusRes = await fetch('/status/' + taskId);
+                const statusData = await statusRes.json();
+                if (statusData.status === 'done') {
+                    transcript = statusData.result;
+                    break;
+                } else if (statusData.status === 'error') {
+                    showToast(statusData.error || 'Chyba pri transkripci');
+                    goToStep(1);
+                    stageTranscribe.classList.remove('active');
+                    return;
+                }
+                // still processing — keep polling
+            } catch {
+                showToast('Ztrata spojeni se serverem');
+                goToStep(1);
+                stageTranscribe.classList.remove('active');
+                return;
+            }
+        }
+
+        stageTranscribe.classList.remove('active');
+        stageTranscribe.classList.add('done');
+
+        // --- Stage 2: Summarize (placeholder — shows transcript for now) ---
+        stageSummarize.classList.add('active');
+        await delay(500);
+        stageSummarize.classList.remove('active');
+        stageSummarize.classList.add('done');
+
+        // --- Stage 3: PDF (placeholder) ---
+        stagePdf.classList.add('active');
+        await delay(500);
+        stagePdf.classList.remove('active');
+        stagePdf.classList.add('done');
+
+        await delay(300);
         goToStep(3);
-        fillResults();
+        fillResults(transcript);
     }
 
-    function fillResults() {
-        $('#transcriptBody').innerHTML = `
-            <p>Dobry den, vitejte na dnesni prednasce. Dnes se budeme zabyvat tematy, ktera jsou klicova pro pochopeni modernich pristupu v oblasti umele inteligence a strojoveho uceni.</p>
-            <p>Prvni cast prednasky se zameri na zakladni koncepty neuronovych siti, vcetne perceptronu, aktivacnich funkci a zpetne propagace chyby. Vysvetlime si, jak tyto zakladni stavebni bloky tvori zaklad pro slozitejsi architektury.</p>
-            <p>V druhe casti se presuneme k pokrocilym tematum, jako jsou konvolucni neuronove site, rekurentni site a mechanismus pozornosti. Ukazeme si prakticke priklady pouziti v oblasti zpracovani prirozeneho jazyka a pocitacoveho videni.</p>
-            <p>Na zaver se podivame na aktualni trendy, vcetne velkych jazykovych modelu a jejich dopadu na spolecnost. Diskutovat budeme take o etickych aspektech nasazeni AI systemu v praxi.</p>
-        `;
-        $('#summaryBody').innerHTML = `
-            <p><strong>Klicove body prednasky:</strong></p>
-            <p>1. Zaklady neuronovych siti — perceptron, aktivacni funkce, zpetna propagace chyby jako stavebni bloky modernich architektur.</p>
-            <p>2. Pokrocile architektury — konvolucni site (CNN), rekurentni site (RNN), mechanismus pozornosti (Attention) a jejich aplikace.</p>
-            <p>3. Prakticke aplikace — zpracovani prirozeneho jazyka (NLP), pocitacove videni, automaticke rozpoznavani reci.</p>
-            <p>4. Aktualni trendy a etika — velke jazykove modely (LLM), spolecensky dopad AI, odpovenne nasazeni.</p>
-        `;
+    function fillResults(transcript) {
+        const body = $('#transcriptBody');
+        body.innerHTML = '';
+        if (transcript) {
+            transcript.split('\n').filter(Boolean).forEach(line => {
+                const p = document.createElement('p');
+                p.textContent = line;
+                body.appendChild(p);
+            });
+        } else {
+            body.innerHTML = '<p>Transkripce nebyla ziskana.</p>';
+        }
+        $('#summaryBody').innerHTML = '<p><em>AI sumarizace bude dostupna po pripojeni modelu.</em></p>';
     }
 
     /* ---- Results Actions ---- */

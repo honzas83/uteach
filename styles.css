@@ -671,6 +671,50 @@ body {
 
 .rec-preview { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
 
+/* ---- Language Select Row ---- */
+.lang-select-row {
+    margin-top: 18px;
+    margin-bottom: -4px;
+}
+
+.lang-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-2);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.lang-label svg { width: 14px; height: 14px; }
+
+#langSelect {
+    width: 100%;
+    padding: 10px 36px 10px 14px;
+    border: 1px solid var(--border-bold);
+    border-radius: var(--r-sm);
+    background: var(--bg-card);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.82rem;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239294A3' stroke-width='2' stroke-linecap='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    cursor: pointer;
+    transition: all var(--dur) var(--ease);
+}
+
+#langSelect:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
 /* ---- Buttons ---- */
 .btn {
     display: inline-flex;
