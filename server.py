@@ -29,6 +29,11 @@ LANGUAGE_MODELS = {
 tasks: dict[str, dict] = {}
 
 
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'}), 200
+
+
 @app.route('/')
 def index():
     return send_from_directory(BASE_DIR, 'index.html')
