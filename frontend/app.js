@@ -197,8 +197,9 @@
 
     async function startRec() {
         try {
-            // Start backup recorder — it requests getUserMedia internally
-            await backupRecorder.start();
+            // Start backup recorder with selected microphone
+            const selectedDeviceId = micSelect.value || undefined;
+            await backupRecorder.start(selectedDeviceId);
 
             // Get the live stream from the recorder for waveform viz
             liveStream = backupRecorder.stream;
