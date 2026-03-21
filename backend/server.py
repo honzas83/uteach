@@ -287,7 +287,6 @@ def summarize():
         return jsonify({'error': 'No transcript provided'}), 400
 
     transcript = data['transcript']
-    lang = data.get('language', 'cs')
 
     prompt = (
         "You are an academic assistant. Create a concise "
