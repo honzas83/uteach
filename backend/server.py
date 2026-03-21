@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import logging
 import threading
 import yaml
 import httpx
@@ -19,6 +20,11 @@ from reportlab.lib.units import cm
 from reportlab.lib.enums import TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+)
 
 # ── Paths ─────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -241,41 +247,61 @@ def call_ollama(
     prompt_id: str, subject_code: str, transcript: str,
 ):
     """Call university Ollama for one YAML prompt."""
-    client = _ollama_client()
-    prompt_cfg = PROMPTS[prompt_id]
-    system = prompt_cfg['template'].format(
-        subject_code=subject_code,
+    logging.info(
+        'Ollama [%s] starting (model=%s)',
+        prompt_id, OLLAMA_MODEL,
     )
-    response = client.chat(
-        model=OLLAMA_MODEL,
-        stream=False,
-        options={'num_ctx': 8192},
-        messages=[
-            {'role': 'system', 'content': system},
-            {
-                'role': 'user',
-                'content': (
-                    f'Přepis přednášky:\n\n{transcript}'
-                ),
-            },
-        ],
-    )
-    return response['message']['content']
+    try:
+        client = _ollama_client()
+        prompt_cfg = PROMPTS[prompt_id]
+        system = prompt_cfg['template'].format(
+            subject_code=subject_code,
+        )
+        response = client.chat(
+            model=OLLAMA_MODEL,
+            stream=False,
+            options={'num_ctx': 8192},
+            messages=[
+                {'role': 'system', 'content': system},
+                {
+                    'role': 'user',
+                    'content': (
+                        f'Přepis přednášky:\n\n{transcript}'
+                    ),
+                },
+            ],
+        )
+        result = response['message']['content']
+        logging.info(
+            'Ollama [%s] done (%d chars)',
+            prompt_id, len(result),
+        )
+        return result
+    except Exception as e:
+        logging.error('Ollama [%s] failed: %s', prompt_id, e)
+        raise
 
 
 def call_ollama_raw(system: str, user_msg: str):
     """Call Ollama with raw system/user messages."""
-    client = _ollama_client()
-    response = client.chat(
-        model=OLLAMA_MODEL,
-        stream=False,
-        options={'num_ctx': 8192},
-        messages=[
-            {'role': 'system', 'content': system},
-            {'role': 'user', 'content': user_msg},
-        ],
-    )
-    return response['message']['content']
+    logging.info('Ollama raw call starting (model=%s)', OLLAMA_MODEL)
+    try:
+        client = _ollama_client()
+        response = client.chat(
+            model=OLLAMA_MODEL,
+            stream=False,
+            options={'num_ctx': 8192},
+            messages=[
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': user_msg},
+            ],
+        )
+        result = response['message']['content']
+        logging.info('Ollama raw call done (%d chars)', len(result))
+        return result
+    except Exception as e:
+        logging.error('Ollama raw call failed: %s', e)
+        raise
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -287,10 +313,15 @@ def process_task(
     lang: str, subject_code: str,
 ):
     t = tasks[task_id]
+    logging.info(
+        'Task %s: started (lang=%s, %d bytes)',
+        task_id[:8], lang, len(file_data),
+    )
 
     # 1. Transcription
     app_id = LANGUAGE_MODELS.get(lang, 'generic/cs/zipformer')
     api_url = f'{UWEBASR_BASE_URL}/{app_id}?format=plaintext'
+    logging.info('Task %s: ASR request to %s', task_id[:8], app_id)
     try:
         resp = requests.post(
             api_url, data=file_data,
@@ -298,25 +329,35 @@ def process_task(
             timeout=3600,
         )
         if resp.status_code == 503:
+            logging.warning('Task %s: ASR 503 (busy)', task_id[:8])
             t.update(
                 status='error',
                 error='All ASR workers are busy. Try again.',
             )
             return
         if resp.status_code != 200:
+            logging.error(
+                'Task %s: ASR HTTP %d', task_id[:8], resp.status_code,
+            )
             t.update(
                 status='error',
                 error=f'ASR API HTTP {resp.status_code}.',
             )
             return
         transcript = resp.text
+        logging.info(
+            'Task %s: ASR done (%d chars)',
+            task_id[:8], len(transcript),
+        )
     except requests.Timeout:
+        logging.error('Task %s: ASR timeout', task_id[:8])
         t.update(
             status='error',
             error='ASR request timed out after 1 hour.',
         )
         return
     except requests.RequestException as e:
+        logging.error('Task %s: ASR network error: %s', task_id[:8], e)
         t.update(status='error', error=f'Network error: {e}')
         return
 
@@ -326,6 +367,7 @@ def process_task(
 
     # 2. AI summarisation via Ollama (parallel)
     t['status'] = 'summarizing'
+    logging.info('Task %s: starting AI summarisation', task_id[:8])
     sections = {}
     prompt_ids = [
         pid for pid in
@@ -348,7 +390,15 @@ def process_task(
             for future in as_completed(futures):
                 pid, result = future.result()
                 sections[pid] = result
+        logging.info(
+            'Task %s: AI summarisation done (%d sections)',
+            task_id[:8], len(sections),
+        )
     except Exception as e:
+        logging.error(
+            'Task %s: AI summarisation failed: %s',
+            task_id[:8], e, exc_info=True,
+        )
         t.update(
             status='done', summary=None, pdf_ready=False,
             error=f'AI summarisation failed: {e}',
@@ -359,10 +409,16 @@ def process_task(
 
     # 3. PDF generation
     t['status'] = 'generating_pdf'
+    logging.info('Task %s: generating PDF', task_id[:8])
     try:
         generate_pdf(task_id, subject_code, sections)
+        logging.info('Task %s: PDF ready', task_id[:8])
         t.update(status='done', pdf_ready=True)
     except Exception as e:
+        logging.error(
+            'Task %s: PDF generation failed: %s',
+            task_id[:8], e, exc_info=True,
+        )
         t.update(
             status='done', pdf_ready=False,
             error=f'PDF generation failed: {e}',
