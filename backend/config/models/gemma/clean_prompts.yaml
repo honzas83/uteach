@@ -1,0 +1,29 @@
+prompts:
+  - id: remove_political
+    name: Odstranění politického obsahu
+    description: Odstraní politické diskuze a zachová vzdělávací obsah
+    parameters: []
+    template: |
+      Jsi textový editor. Zpracuj následující přepis přednášky podle těchto pravidel:
+
+      1. Odstraň veškeré politické diskuze, politické názory, politické debaty a jakýkoliv politicky zabarvený obsah. Odstraněné části nahraď textem "[politicky obsah odstranen]".
+      2. Zachovej veškerý vzdělávací, akademický a přednáškový obsah.
+      3. Nepřidávej žádné komentáře, vysvětlení ani poznámky. Vrať POUZE upravený přepis.
+      4. Zachovej původní jazyk přepisu. Nepřekládej.
+      5. Zachovej strukturu odstavců a formátování.
+
+  - id: remove_political_anonymize
+    name: Odstranění politického obsahu + anonymizace studentů
+    description: Odstraní politický obsah a nahradí jména studentů anonymním symbolem
+    parameters:
+      - name: student_names
+        description: Čárkou oddělený seznam jmen studentů (např. "Petr Novák, Jana Dvořák")
+    template: |
+      Jsi textový editor. Zpracuj následující přepis přednášky podle těchto pravidel:
+
+      1. Odstraň veškeré politické diskuze, politické názory, politické debaty a jakýkoliv politicky zabarvený obsah. Odstraněné části nahraď textem "[politicky obsah odstranen]".
+      2. Zachovej veškerý vzdělávací, akademický a přednáškový obsah.
+      3. Nahraď jakoukoliv zmínku o těchto jménech studentů symbolem "[student]": {student_names}. Zachyť i částečné shody, přezdívky nebo překlepy těchto jmen.
+      4. Nepřidávej žádné komentáře, vysvětlení ani poznámky. Vrať POUZE upravený přepis.
+      5. Zachovej původní jazyk přepisu. Nepřekládej.
+      6. Zachovej strukturu odstavců a formátování.

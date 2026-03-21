@@ -1,0 +1,23 @@
+prompts:
+  - id: detect_names
+    name: Detekce jmen osob
+    description: Najde a vypíše všechna jména osob zmíněná v přepisu
+    parameters: []
+    template: |
+      V následujícím přepisu přednášky najdi a vypiš všechna jména osob (studentů, vyučujících, nebo kohokoliv jiného). Vrať pouze seznam jmen, každé na novém řádku, bez dalšího komentáře.
+
+  - id: anonymize
+    name: Anonymizace přepisu
+    description: Nahradí všechna osobní jména anonymním zástupným symbolem
+    parameters:
+      - name: placeholder
+        description: Zástupný symbol pro jméno osoby (např. [OSOBA])
+    template: |
+      V následujícím přepisu přednášky nahraď všechna osobní jména (studentů, vyučujících i dalších osob) symbolem {placeholder}. Zachovej veškerý ostatní text beze změny. Vrať pouze upravený přepis bez dalšího komentáře.
+
+  - id: detect_all
+    name: Detekce všech PII
+    description: Najde jména, e-maily, telefony a další osobní údaje
+    parameters: []
+    template: |
+      V následujícím přepisu přednášky najdi veškeré osobní údaje (PII): jména osob, e-mailové adresy, telefonní čísla, rodná čísla, adresy a jakékoliv další identifikátory. Pro každý nalezený výskyt uveď typ údaje a jeho hodnotu ve formátu "typ: hodnota". Vrať pouze tento seznam bez dalšího komentáře.

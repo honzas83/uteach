@@ -1,10 +1,13 @@
+import json
 import os
 import re
-import json
-import uuid
-import requests
+
 import boto3
+import httpx
+import requests
+import yaml
 from flask import Flask, request, jsonify, send_from_directory
+from ollama import Client
 from redis import Redis
 from rq import Queue
 from rq.job import Job, NoSuchJobError
@@ -18,6 +21,34 @@ _frontend_parent_level = os.path.join(BASE_DIR, '..', 'frontend')
 FRONTEND_DIR = _frontend_same_level if os.path.isdir(_frontend_same_level) else _frontend_parent_level
 
 OUTPUT_FILE = os.path.join(BASE_DIR, 'text.txt')
+
+# Root folder for per-model YAML prompt configs
+# Structure: config/models/<model_name>/summarize_prompts.yaml
+#                                       pii_prompts.yaml
+#                                       clean_prompts.yaml
+MODELS_CONFIG_DIR = os.path.join(BASE_DIR, 'config', 'models')
+
+# Prompt config filenames (same name expected inside every model folder)
+SUMMARIZE_CONFIG  = 'summarize_prompts.yaml'
+PII_CONFIG        = 'pii_prompts.yaml'
+CLEAN_CONFIG      = 'clean_prompts.yaml'
+
+# Ollama server settings
+OLLAMA_HOST     = os.environ.get('OLLAMA_HOST',     'https://ollama.kky.zcu.cz')
+OLLAMA_USERNAME = os.environ.get('OLLAMA_USERNAME', '')
+OLLAMA_PASSWORD = os.environ.get('OLLAMA_PASSWORD', '')
+
+# Ollama model names per model folder name
+OLLAMA_MODEL_NAMES = {
+    'gemma':       'gemma3:12b',
+    'qwen':        'qwen2.5:14b',
+    'ministral-3': 'mistral:latest',
+}
+
+# Bedrock model IDs per model folder name
+BEDROCK_MODEL_IDS = {
+    'claude': 'anthropic.claude-3-haiku-20240307-v1:0',
+}
 
 app = Flask(__name__, static_folder=FRONTEND_DIR)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500 MB upload limit
@@ -47,6 +78,110 @@ ai_queue  = Queue('ai',  connection=redis_conn, default_timeout=600)
 
 
 # ---------------------------------------------------------------------------
+# YAML config helpers
+# ---------------------------------------------------------------------------
+
+def _config_path(model_name, config_filename):
+    """Return full path to a prompt config file for a given model."""
+    return os.path.join(MODELS_CONFIG_DIR, model_name, config_filename)
+
+
+def _load_prompts(model_name, config_filename):
+    """Load prompts from config/models/<model_name>/<config_filename>.
+
+    Returns a dict keyed by prompt id, or {} if the file is missing/invalid.
+    """
+    config_file = _config_path(model_name, config_filename)
+    if not os.path.isfile(config_file):
+        return {}
+    with open(config_file, 'r', encoding='utf-8') as fh:
+        data = yaml.safe_load(fh)
+    prompts = {}
+    for entry in (data or {}).get('prompts', []):
+        if 'id' in entry and 'template' in entry:
+            prompts[entry['id']] = entry
+    return prompts
+
+
+def _get_prompt(model_name, config_filename, prompt_id):
+    """Return a single prompt entry or None."""
+    return _load_prompts(model_name, config_filename).get(prompt_id)
+
+
+def _list_models():
+    """Return names of all model folders present under config/models/."""
+    if not os.path.isdir(MODELS_CONFIG_DIR):
+        return []
+    return [
+        d for d in os.listdir(MODELS_CONFIG_DIR)
+        if os.path.isdir(os.path.join(MODELS_CONFIG_DIR, d))
+    ]
+
+
+def _render_template(template, parameters):
+    """Replace {param} placeholders in template with values from parameters dict."""
+    try:
+        return template.format(**parameters)
+    except KeyError as e:
+        raise ValueError(f'Missing required parameter: {e}')
+
+
+# ---------------------------------------------------------------------------
+# Model invocation — Bedrock and Ollama
+# ---------------------------------------------------------------------------
+
+def _bedrock_invoke(prompt, max_tokens=4096):
+    """Invoke Claude via AWS Bedrock."""
+    bedrock = boto3.client(
+        'bedrock-runtime',
+        region_name=os.environ.get('AWS_REGION', 'eu-central-1')
+    )
+    response = bedrock.invoke_model(
+        modelId=BEDROCK_MODEL_IDS['claude'],
+        contentType='application/json',
+        accept='application/json',
+        body=json.dumps({
+            'anthropic_version': 'bedrock-2023-05-31',
+            'max_tokens': max_tokens,
+            'messages': [
+                {'role': 'user', 'content': prompt}
+            ]
+        })
+    )
+    result = json.loads(response['body'].read())
+    return result['content'][0]['text']
+
+
+def _ollama_invoke(model_name, prompt):
+    """Invoke a model on the Ollama server."""
+    client = Client(
+        host=OLLAMA_HOST,
+        auth=httpx.DigestAuth(OLLAMA_USERNAME, OLLAMA_PASSWORD),
+    )
+    ollama_model = OLLAMA_MODEL_NAMES.get(model_name)
+    if not ollama_model:
+        raise ValueError(f"No Ollama model name configured for '{model_name}'")
+    response = client.chat(
+        model=ollama_model,
+        stream=False,
+        options={"num_ctx": 8192},
+        messages=[
+            {'role': 'user', 'content': prompt}
+        ]
+    )
+    return response['message']['content']
+
+
+def _model_invoke(model_name, prompt, max_tokens=4096):
+    """Route invocation to Bedrock or Ollama based on model_name."""
+    if model_name in BEDROCK_MODEL_IDS:
+        return _bedrock_invoke(prompt, max_tokens)
+    if model_name in OLLAMA_MODEL_NAMES:
+        return _ollama_invoke(model_name, prompt)
+    raise ValueError(f"Unknown model: '{model_name}'")
+
+
+# ---------------------------------------------------------------------------
 # Worker task functions (must be importable at module level for RQ)
 # ---------------------------------------------------------------------------
 
@@ -71,95 +206,13 @@ def _run_transcribe(file_data, app_id):
         raise RuntimeError(f'Network error: {e}')
 
 
-def _run_clean(transcript, student_names, custom_prompt):
-    names_instruction = ""
-    if student_names:
-        names_list = ", ".join(student_names)
-        names_instruction = (
-            "\n3. Replace any mention of these student "
-            "names with '[student]': "
-            f"{names_list}. "
-            "Also catch partial matches, nicknames, "
-            "or misspellings of these names."
-        )
-
-    custom_instruction = ""
-    if custom_prompt:
-        custom_instruction = (
-            f"\n7. Additional instructions: {custom_prompt}"
-        )
-
-    prompt = (
-        "You are a text editor. Process the following "
-        "lecture transcript according to these rules:\n\n"
-        "1. Remove all political discussions, political opinions, "
-        "political debates, and any politically charged content. "
-        "Replace removed sections with "
-        "'[politicky obsah odstranen]'.\n"
-        "2. Keep all educational, academic, and "
-        "lecture-related content intact."
-        f"{names_instruction}\n"
-        "4. Do NOT add any commentary, explanations, or notes. "
-        "Return ONLY the cleaned transcript.\n"
-        "5. Preserve the original language of the transcript. "
-        "Do not translate.\n"
-        "6. Preserve paragraph structure and formatting."
-        f"{custom_instruction}\n\n"
-        f"Transcript:\n{transcript}"
-    )
-
-    bedrock = boto3.client('bedrock-runtime', region_name=os.environ.get('AWS_REGION', 'eu-central-1'))
-    response = bedrock.invoke_model(
-        modelId='anthropic.claude-3-haiku-20240307-v1:0',
-        contentType='application/json',
-        accept='application/json',
-        body=json.dumps({
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': 4096,
-            'messages': [{'role': 'user', 'content': prompt}]
-        })
-    )
-    result = json.loads(response['body'].read())
-    return result['content'][0]['text']
+def _run_prompt(model_name, rendered_prompt, transcript, max_tokens=4096):
+    """Universal worker: prepend rendered prompt to transcript and call the model."""
+    full_prompt = f"{rendered_prompt}\n\nTranscript:\n{transcript}"
+    return _model_invoke(model_name, full_prompt, max_tokens)
 
 
-def _run_summarize(transcript):
-    prompt = (
-        "You are an academic assistant. Create a concise "
-        "summary of the following lecture transcript.\n\n"
-        "Rules:\n"
-        "1. Write the summary in the SAME language as "
-        "the transcript.\n"
-        "2. Use bullet points for key topics.\n"
-        "3. Keep it under 300 words.\n"
-        "4. Start with a one-sentence overview.\n"
-        "5. Then list the main points covered.\n"
-        "6. Do NOT add information not in the transcript.\n"
-        "7. Do NOT include any meta-commentary.\n\n"
-        f"Transcript:\n{transcript}"
-    )
-
-    bedrock = boto3.client(
-        'bedrock-runtime',
-        region_name=os.environ.get('AWS_REGION', 'eu-central-1')
-    )
-    response = bedrock.invoke_model(
-        modelId='anthropic.claude-3-haiku-20240307-v1:0',
-        contentType='application/json',
-        accept='application/json',
-        body=json.dumps({
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': 2048,
-            'messages': [
-                {'role': 'user', 'content': prompt}
-            ]
-        })
-    )
-    result = json.loads(response['body'].read())
-    return result['content'][0]['text']
-
-
-def _run_edit_summary(summary, instruction):
+def _run_edit_summary(model_name, summary, instruction):
     prompt = (
         "You are an academic text editor. You will receive a "
         "lecture summary and an editing instruction. "
@@ -174,25 +227,7 @@ def _run_edit_summary(summary, instruction):
         f"Instruction: {instruction}\n\n"
         f"Summary:\n{summary}"
     )
-
-    bedrock = boto3.client(
-        'bedrock-runtime',
-        region_name=os.environ.get('AWS_REGION', 'eu-central-1')
-    )
-    response = bedrock.invoke_model(
-        modelId='anthropic.claude-3-haiku-20240307-v1:0',
-        contentType='application/json',
-        accept='application/json',
-        body=json.dumps({
-            'anthropic_version': 'bedrock-2023-05-31',
-            'max_tokens': 2048,
-            'messages': [
-                {'role': 'user', 'content': prompt}
-            ]
-        })
-    )
-    result = json.loads(response['body'].read())
-    return result['content'][0]['text']
+    return _model_invoke(model_name, prompt, max_tokens=2048)
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +242,49 @@ def _job_response(job):
     elif s == 'failed':
         payload['error'] = str(job.latest_result().exc_string) if job.latest_result() else 'Unknown error'
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Helper: validate request and enqueue a YAML-driven prompt job
+# ---------------------------------------------------------------------------
+
+def _enqueue_prompt_job(config_filename, data, error_label):
+    """Validate request, load prompt from the model's YAML folder, enqueue job.
+
+    Expects data to contain: transcript, model_name, prompt_id, parameters (opt).
+    Returns a Flask response tuple on error, or a Job instance on success.
+    """
+    if not data or 'transcript' not in data:
+        return jsonify({'error': 'No transcript provided'}), 400
+    if 'model_name' not in data:
+        return jsonify({'error': 'No model_name provided'}), 400
+    if 'prompt_id' not in data:
+        return jsonify({'error': 'No prompt_id provided'}), 400
+
+    model_name = data['model_name']
+
+    prompt_entry = _get_prompt(model_name, config_filename, data['prompt_id'])
+    if prompt_entry is None:
+        return jsonify({
+            'error': (
+                f"Unknown prompt_id '{data['prompt_id']}' "
+                f"for model '{model_name}'"
+            )
+        }), 404
+
+    try:
+        rendered = _render_template(
+            prompt_entry['template'],
+            data.get('parameters', {}),
+        )
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    try:
+        job = ai_queue.enqueue(_run_prompt, model_name, rendered, data['transcript'])
+        return job
+    except Exception as e:
+        return jsonify({'error': f'{error_label}: {str(e)}'}), 500
 
 
 @app.route('/health')
@@ -250,6 +328,12 @@ def status(task_id):
     except NoSuchJobError:
         return jsonify({'error': 'Task not found'}), 404
     return jsonify(_job_response(job))
+
+
+@app.route('/models', methods=['GET'])
+def list_models():
+    """Return all available model names (based on config/models/ subfolders)."""
+    return jsonify({'models': _list_models()})
 
 
 @app.route('/parse-students', methods=['POST'])
@@ -356,51 +440,124 @@ def parse_students():
 
 @app.route('/clean', methods=['POST'])
 def clean_transcript():
+    """
+    POST body (JSON):
+      {
+        "transcript":  "<transcript text>",
+        "model_name":  "claude",
+        "prompt_id":   "<id from config/models/claude/clean_prompts.yaml>",
+        "parameters":  { ... }
+      }
+    """
     data = request.get_json()
-    if not data or 'transcript' not in data:
-        return jsonify({'error': 'No transcript provided'}), 400
+    result = _enqueue_prompt_job(CLEAN_CONFIG, data, 'AI processing failed')
+    if isinstance(result, tuple):
+        return result
+    return jsonify({'task_id': result.id})
 
-    transcript = data['transcript']
-    student_names = data.get('student_names', [])
-    custom_prompt = data.get('custom_prompt', '')
 
-    try:
-        job = ai_queue.enqueue(_run_clean, transcript, student_names, custom_prompt)
-        return jsonify({'task_id': job.id})
-    except Exception as e:
-        return jsonify({'error': f'AI processing failed: {str(e)}'}), 500
+@app.route('/clean-prompts', methods=['GET'])
+def list_clean_prompts():
+    """Return clean prompts for all models.
+
+    Optional query param: ?model_name=claude
+    """
+    model_name = request.args.get('model_name')
+    models = [model_name] if model_name else _list_models()
+    return jsonify({
+        m: list(_load_prompts(m, CLEAN_CONFIG).values())
+        for m in models
+    })
 
 
 @app.route('/summarize', methods=['POST'])
 def summarize():
+    """
+    POST body (JSON):
+      {
+        "transcript":  "<transcript text>",
+        "model_name":  "gemma",
+        "prompt_id":   "<id from config/models/gemma/summarize_prompts.yaml>",
+        "parameters":  { "subject_code": "KKY/ITE" }
+      }
+    """
     data = request.get_json()
-    if not data or 'transcript' not in data:
-        return jsonify({'error': 'No transcript provided'}), 400
+    result = _enqueue_prompt_job(SUMMARIZE_CONFIG, data, 'Summarization failed')
+    if isinstance(result, tuple):
+        return result
+    return jsonify({'task_id': result.id})
 
-    transcript = data['transcript']
 
-    try:
-        job = ai_queue.enqueue(_run_summarize, transcript)
-        return jsonify({'task_id': job.id})
-    except Exception as e:
-        return jsonify({
-            'error': f'Summarization failed: {str(e)}'
-        }), 500
+@app.route('/summarize-prompts', methods=['GET'])
+def list_summarize_prompts():
+    """Return summarize prompts for all models.
+
+    Optional query param: ?model_name=gemma
+    """
+    model_name = request.args.get('model_name')
+    models = [model_name] if model_name else _list_models()
+    return jsonify({
+        m: list(_load_prompts(m, SUMMARIZE_CONFIG).values())
+        for m in models
+    })
+
+
+@app.route('/pii-detect', methods=['POST'])
+def pii_detect():
+    """
+    POST body (JSON):
+      {
+        "transcript":  "<transcript text>",
+        "model_name":  "qwen",
+        "prompt_id":   "<id from config/models/qwen/pii_prompts.yaml>",
+        "parameters":  { ... }
+      }
+    """
+    data = request.get_json()
+    result = _enqueue_prompt_job(PII_CONFIG, data, 'PII detection failed')
+    if isinstance(result, tuple):
+        return result
+    return jsonify({'task_id': result.id})
+
+
+@app.route('/pii-prompts', methods=['GET'])
+def list_pii_prompts():
+    """Return PII prompts for all models.
+
+    Optional query param: ?model_name=qwen
+    """
+    model_name = request.args.get('model_name')
+    models = [model_name] if model_name else _list_models()
+    return jsonify({
+        m: list(_load_prompts(m, PII_CONFIG).values())
+        for m in models
+    })
 
 
 @app.route('/edit-summary', methods=['POST'])
 def edit_summary():
+    """
+    POST body (JSON):
+      {
+        "summary":     "<previously generated summary text>",
+        "instruction": "<user's editing instruction>",
+        "model_name":  "claude"
+      }
+    """
     data = request.get_json()
     if not data or 'summary' not in data:
         return jsonify({'error': 'No summary provided'}), 400
     if 'instruction' not in data or not data['instruction'].strip():
         return jsonify({'error': 'No instruction provided'}), 400
+    if 'model_name' not in data:
+        return jsonify({'error': 'No model_name provided'}), 400
 
     summary = data['summary']
     instruction = data['instruction']
+    model_name = data['model_name']
 
     try:
-        job = ai_queue.enqueue(_run_edit_summary, summary, instruction)
+        job = ai_queue.enqueue(_run_edit_summary, model_name, summary, instruction)
         return jsonify({'task_id': job.id})
     except Exception as e:
         return jsonify({

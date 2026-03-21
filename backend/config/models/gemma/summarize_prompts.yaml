@@ -1,0 +1,27 @@
+prompts:
+  - id: lecture_summary
+    name: Shrnutí přednášky
+    description: Zestručnění výkladu zahrnující všechna probíraná témata
+    parameters:
+      - name: subject_code
+        description: Zkratka předmětu (např. KKY/ITE)
+    template: |
+      Mám přepis přednášky týkající se předmětu {subject_code}. Připrav mi zestručnění výkladu tak, aby v něm byla zahrnuta všechna témata, která se na přednášce probírala. Témata uveď chronologicky, v pořadí v jakém zazněla v přednášce. Text připrav tak, jako bych jej psal já pro studenty. Použij nadpis "Shrnutí hlavních bodů", číslovaný seznam a každý bod bude začínat tučně formátovaným pojmem. Nad rámec nadpisu a číslovaného seznamu nepřidávej žádný text.
+
+  - id: not_in_slides
+    name: Co nenajdete v prezentaci
+    description: Seznam důležitých bodů z přednášky, které nejsou obsaženy v prezentaci
+    parameters:
+      - name: subject_code
+        description: Zkratka předmětu (např. KKY/ITE)
+    template: |
+      Zde je prezentace z předmětu {subject_code}, připrav seznam nejdůležitějších bodů, které zazněly v přednášce a nejsou v prezentaci. Témata uveď chronologicky, v pořadí v jakém zazněla v přednášce. Text připrav tak, jako bych jej psal já pro studenty. Použij nadpis "Co nenajdete v prezentaci", číslovaný seznam a každý bod bude začínat tučně formátovaným pojmem. Nad rámec nadpisu a číslovaného seznamu nepřidávej žádný text.
+
+  - id: glossary
+    name: Důležité pojmy
+    description: Vyčerpávající abecední seznam pojmů a jejich definic z přednášky i prezentace
+    parameters:
+      - name: subject_code
+        description: Zkratka předmětu (např. KKY/ITE)
+    template: |
+      Udělej vyčerpávající seznam důležitých pojmů a jejich definic z předmětu {subject_code}, uspořádej ho abecedně. Seznam musí zahrnovat všechny pojmy z prezentace a důležité pojmy, které zazněly v přednášce. Seznam může být i velice dlouhý. Použij odrážky a nadpis "Důležité pojmy", každý bod bude začínat tučně formátovaným pojmem. Nad rámec nadpisu a seznamu nepřidávej žádný text.
