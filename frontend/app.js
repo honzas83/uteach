@@ -576,10 +576,12 @@
         const summary = $('#summaryBody');
         let html = '';
 
-        // AI summary
+        // AI summary with markdown rendering
         if (summaryText) {
-            summaryText.split('\n').filter(Boolean).forEach(line => {
-                html += '<p>' + escHtml(line) + '</p>';
+            summaryText.split('\n').forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+                html += renderMdLine(trimmed);
             });
         } else {
             html += '<p><em>Shrnutí nebylo vygenerováno.</em></p>';
@@ -602,6 +604,44 @@
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    }
+
+    function renderMdLine(line) {
+        // Headings: # ## ###
+        const hMatch = line.match(/^(#{1,3})\s+(.+)/);
+        if (hMatch) {
+            const lvl = hMatch[1].length;
+            const sizes = { 1: '1.1em', 2: '1em', 3: '0.92em' };
+            const text = mdInline(hMatch[2]);
+            return '<p style="font-weight:600;font-size:'
+                + sizes[lvl] + ';margin:10px 0 4px;">'
+                + text + '</p>';
+        }
+        // Numbered list: 1. text
+        const numMatch = line.match(/^(\d+)\.\s+(.+)/);
+        if (numMatch) {
+            return '<p style="padding-left:16px;margin:2px 0;">'
+                + '<strong>' + numMatch[1] + '.</strong> '
+                + mdInline(numMatch[2]) + '</p>';
+        }
+        // Bullet list: - text or * text
+        if (/^[-*]\s+/.test(line)) {
+            const text = mdInline(line.replace(/^[-*]\s+/, ''));
+            return '<p style="padding-left:16px;margin:2px 0;">'
+                + '• ' + text + '</p>';
+        }
+        // Regular paragraph
+        return '<p>' + mdInline(line) + '</p>';
+    }
+
+    function mdInline(text) {
+        // Escape HTML first
+        let s = escHtml(text);
+        // **bold**
+        s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        // *italic*
+        s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        return s;
     }
 
     /* ---- Results Actions ---- */

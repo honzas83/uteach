@@ -1,75 +1,75 @@
 ﻿prompts:
   - id: lecture_summary
-    name: Shrnut├¡ p┼Öedn├í┼íky
-    description: Zestru─ìn─¢n├¡ v├╜kladu zahrnuj├¡c├¡ v┼íechna prob├¡ran├í t├⌐mata
+    name: Shrnutí přednášky
+    description: Zestručnění výkladu zahrnující všechna probíraná témata
     model: claude-sonnet-4-6
     parameters:
       - name: subject_code
-        description: Zkratka p┼Öedm─¢tu (nap┼Ö. KKY/ITE)
+        description: Zkratka předmětu (např. KKY/ITE)
     template: |
       <role>
-      Jsi asistent pedagoga. P├¡┼íe┼í text ur─ìen├╜ student┼»m p┼Öedm─¢tu {subject_code}.
+      Jsi asistent pedagoga. Píšeš text určený studentům předmětu {subject_code}.
       </role>
 
       <task>
-      Zpracuj p┼Öilo┼╛en├╜ p┼Öepis p┼Öedn├í┼íky a vytvo┼Ö zestru─ìn─¢n├¡ v├╜kladu.
-      Zahr┼ê v┼íechna t├⌐mata, kter├í se na p┼Öedn├í┼íce prob├¡rala, chronologicky v po┼Öad├¡, v jak├⌐m zazn─¢la.
+      Zpracuj přiložený přepis přednášky a vytvoř zestručnění výkladu.
+      Zahrň všechna témata, která se na přednášce probírala, chronologicky v pořadí, v jakém zazněla.
       </task>
 
       <format>
-      - Nadpis: "Shrnut├¡ hlavn├¡ch bod┼»"
-      - ─î├¡slovan├╜ seznam
-      - Ka┼╛d├╜ bod za─ì├¡n├í tu─ìn─¢ form├ítovan├╜m pojmem
-      - ┼╜├ídn├╜ text mimo nadpis a seznam
+      - Nadpis: "Shrnutí hlavních bodů"
+      - Číslovaný seznam
+      - Každý bod začíná tučně formátovaným pojmem
+      - Žádný text mimo nadpis a seznam
       </format>
 
   - id: not_in_slides
     name: Co nenajdete v prezentaci
-    description: Seznam d┼»le┼╛it├╜ch bod┼» z p┼Öedn├í┼íky, kter├⌐ nejsou obsa┼╛eny v prezentaci
+    description: Seznam důležitých bodů z přednášky, které nejsou obsaženy v prezentaci
     model: claude-sonnet-4-6
     parameters:
       - name: subject_code
-        description: Zkratka p┼Öedm─¢tu (nap┼Ö. KKY/ITE)
+        description: Zkratka předmětu (např. KKY/ITE)
     template: |
       <role>
-      Jsi asistent pedagoga. P├¡┼íe┼í text ur─ìen├╜ student┼»m p┼Öedm─¢tu {subject_code}.
+      Jsi asistent pedagoga. Píšeš text určený studentům předmětu {subject_code}.
       </role>
 
       <task>
-      Porovnej p┼Öilo┼╛en├╜ p┼Öepis p┼Öedn├í┼íky s prezentac├¡.
-      Vytvo┼Ö seznam nejd┼»le┼╛it─¢j┼í├¡ch bod┼», kter├⌐ zazn─¢ly v p┼Öedn├í┼íce, ale nejsou obsa┼╛eny v prezentaci.
-      T├⌐mata uve─Å chronologicky v po┼Öad├¡, v jak├⌐m zazn─¢la v p┼Öedn├í┼íce.
+      Porovnej přiložený přepis přednášky s prezentací.
+      Vytvoř seznam nejdůležitějších bodů, které zazněly v přednášce, ale nejsou obsaženy v prezentaci.
+      Témata uveď chronologicky v pořadí, v jakém zazněla v přednášce.
       </task>
 
       <format>
       - Nadpis: "Co nenajdete v prezentaci"
-      - ─î├¡slovan├╜ seznam
-      - Ka┼╛d├╜ bod za─ì├¡n├í tu─ìn─¢ form├ítovan├╜m pojmem
-      - ┼╜├ídn├╜ text mimo nadpis a seznam
+      - Číslovaný seznam
+      - Každý bod začíná tučně formátovaným pojmem
+      - Žádný text mimo nadpis a seznam
       </format>
 
   - id: glossary
-    name: D┼»le┼╛it├⌐ pojmy
-    description: Vy─ìerp├ívaj├¡c├¡ abecedn├¡ seznam pojm┼» a jejich definic z p┼Öedn├í┼íky i prezentace
+    name: Důležité pojmy
+    description: Vyčerpávající abecední seznam pojmů a jejich definic z přednášky i prezentace
     model: claude-sonnet-4-6
     parameters:
       - name: subject_code
-        description: Zkratka p┼Öedm─¢tu (nap┼Ö. KKY/ITE)
+        description: Zkratka předmětu (např. KKY/ITE)
     template: |
       <role>
-      Jsi asistent pedagoga. P├¡┼íe┼í text ur─ìen├╜ student┼»m p┼Öedm─¢tu {subject_code}.
+      Jsi asistent pedagoga. Píšeš text určený studentům předmětu {subject_code}.
       </role>
 
       <task>
-      Vytvo┼Ö vy─ìerp├ívaj├¡c├¡ seznam d┼»le┼╛it├╜ch pojm┼» a jejich definic.
-      Zahr┼ê v┼íechny pojmy z prezentace i d┼»le┼╛it├⌐ pojmy, kter├⌐ zazn─¢ly v p┼Öedn├í┼íce.
-      Seznam m┼»┼╛e b├╜t velice dlouh├╜ ΓÇô nevynech├ívej ┼╛├ídn├⌐ relevantn├¡ pojmy.
-      Uspo┼Ö├ídej seznam abecedn─¢.
+      Vytvoř vyčerpávající seznam důležitých pojmů a jejich definic.
+      Zahrň všechny pojmy z prezentace i důležité pojmy, které zazněly v přednášce.
+      Seznam může být velice dlouhý – nevynechávej žádné relevantní pojmy.
+      Uspořádej seznam abecedně.
       </task>
 
       <format>
-      - Nadpis: "D┼»le┼╛it├⌐ pojmy"
-      - Odr├í┼╛kov├╜ seznam
-      - Ka┼╛d├╜ bod za─ì├¡n├í tu─ìn─¢ form├ítovan├╜m pojmem
-      - ┼╜├ídn├╜ text mimo nadpis a seznam
+      - Nadpis: "Důležité pojmy"
+      - Odrážkový seznam
+      - Každý bod začíná tučně formátovaným pojmem
+      - Žádný text mimo nadpis a seznam
       </format>
