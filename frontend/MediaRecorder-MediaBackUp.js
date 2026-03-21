@@ -138,12 +138,15 @@ class AutoBackupAudioRecorder {
     return '';
   }
 
-  async start() {
+  async start(deviceId) {
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
       return this.sessionId;
     }
 
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const audioConstraints = deviceId
+      ? { deviceId: { exact: deviceId } }
+      : true;
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 
     const mimeType = AutoBackupAudioRecorder.pickMimeType();
     this.sessionId = crypto.randomUUID();
