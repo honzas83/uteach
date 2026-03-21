@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .
@@ -12,6 +13,7 @@ COPY backend/server.py .
 COPY backend/text.txt .
 
 COPY frontend/ frontend/
+COPY prompts/ prompts/
 
 EXPOSE 5001
 
