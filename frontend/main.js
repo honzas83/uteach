@@ -660,6 +660,12 @@
     });
   }
 
+  /* ═══════════════ SCROLL LOCK ═══════════════ */
+  function setScrollLock(locked) {
+    document.body.classList.toggle('overflow-hidden', locked);
+    document.body.classList.toggle('overflow-auto', !locked);
+  }
+
   /* ═══════════════ STEP TRANSITION HELPER ═══════════════ */
   function transitionStep(from, to, onVisible) {
     from.classList.add('step-leaving');
@@ -730,6 +736,7 @@
     transitionStep(dom.step2, dom.step3, () => {
       updateStepper(3);
       setStatus('Hotovo', 'done');
+      setScrollLock(false);
 
       dom.summaryContent.innerHTML = MOCK_SUMMARY;
       if (typeof lucide !== 'undefined') lucide.createIcons();
@@ -818,6 +825,7 @@
     dom.step2.classList.add('hidden');
     dom.step1.classList.remove('hidden');
     updateStepper(1);
+    setScrollLock(true);
     setStatus('Připraveno', 'ready');
   }
 
