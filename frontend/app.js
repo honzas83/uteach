@@ -317,7 +317,7 @@
                 // Gradient bar
                 const grd = ctx.createLinearGradient(x, y, x, y + bh);
                 grd.addColorStop(0, accent);
-                grd.addColorStop(1, 'rgba(139,92,246,0.6)');
+                grd.addColorStop(1, 'rgba(26,143,168,0.6)');
                 ctx.fillStyle = grd;
                 ctx.beginPath();
                 ctx.roundRect(x, y, bw, bh, 2);
