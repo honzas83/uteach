@@ -756,7 +756,31 @@
   function pollTask(taskId, stages) {
     let stage1Done = false;
     let stage2Done = false;
+    const startedAt = Date.now();
+    const TIMEOUT = 10 * 60 * 1000; // 10 minutes max
+
+    function finishPoll(poll, task) {
+      clearInterval(poll);
+      if (!stage1Done) completeStage(stages[1]);
+      if (!stage2Done) completeStage(stages[2]);
+      state.taskId = taskId;
+      state.transcript = task.result || '';
+      state.summaryText = task.summary || '';
+      state.pdfReady = task.pdf_ready || false;
+      state.taskError = task.error || null;
+      setTimeout(showResults, 600);
+    }
+
     const poll = setInterval(() => {
+      // Timeout guard — show whatever we have
+      if (Date.now() - startedAt > TIMEOUT) {
+        finishPoll(poll, {
+          result: '', summary: '', pdf_ready: false,
+          error: 'Zpracování trvá příliš dlouho. Zkuste to znovu.',
+        });
+        return;
+      }
+
       fetch('/status/' + taskId)
         .then(r => r.json())
         .then(task => {
@@ -772,16 +796,7 @@
             completeStage(stages[2]);
           }
           if (task.status === 'done' || task.status === 'error') {
-            clearInterval(poll);
-            if (!stage1Done) completeStage(stages[1]);
-            if (!stage2Done) completeStage(stages[2]);
-            // Store results in state for downloads
-            state.taskId = taskId;
-            state.transcript = task.result || '';
-            state.summaryText = task.summary || '';
-            state.pdfReady = task.pdf_ready || false;
-            state.taskError = task.error || null;
-            setTimeout(showResults, 600);
+            finishPoll(poll, task);
           }
         })
         .catch(() => {}); // silently retry
