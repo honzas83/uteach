@@ -127,7 +127,7 @@
 
     function handleFile(file) {
         if (!file.type.startsWith('audio/')) {
-            showToast('Vyberte prosim zvukovy soubor');
+            showToast('Vyberte prosím zvukový soubor');
             return;
         }
         currentFile = file;
@@ -169,7 +169,7 @@
                 micSelect.appendChild(o);
             });
         } catch {
-            micSelect.innerHTML = '<option value="">Mikrofon nedostupny</option>';
+            micSelect.innerHTML = '<option value="">Mikrofon nedostupný</option>';
         }
     })();
 
@@ -186,7 +186,7 @@
 
             isRecording = true;
             recordBtn.classList.add('recording');
-            recorderHint.textContent = 'Nahravani... kliknete pro zastaveni';
+            recorderHint.textContent = 'Nahrávání... klikněte pro zastavení';
             micSelect.disabled = true;
 
             recSec = 0;
@@ -200,7 +200,7 @@
 
             if (liveStream) initWave(liveStream);
         } catch {
-            showToast('Nelze pristoupit k mikrofonu');
+            showToast('Nelze přistoupit k mikrofonu');
         }
     }
 
@@ -208,7 +208,7 @@
         // Stop waveform & timer immediately for responsive UI
         isRecording = false;
         recordBtn.classList.remove('recording');
-        recorderHint.textContent = 'Stisknete pro nahravani';
+        recorderHint.textContent = 'Stiskněte pro nahrávání';
         micSelect.disabled = false;
         clearInterval(recInterval);
         if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
@@ -226,7 +226,7 @@
             }
         } catch (err) {
             console.error('Stop recording failed:', err);
-            showToast('Chyba pri zastaveni nahravani');
+            showToast('Chyba při zastavení nahrávání');
         }
     }
 
@@ -259,7 +259,7 @@
                 panelUpload.classList.remove('active');
                 recPreview.classList.remove('hidden');
                 updateSubmit();
-                showToast('Obnovena predchozi nahravka');
+                showToast('Obnovena předchozí nahrávka');
             }
         } catch {
             // No session to recover — that's fine
@@ -347,7 +347,7 @@
         } else if (recordedBlob) {
             formData.append('file', recordedBlob, 'recording.webm');
         } else {
-            showToast('Zadny soubor k odeslani');
+            showToast('Žádný soubor k odeslání');
             goToStep(1);
             return;
         }
@@ -358,14 +358,14 @@
             const res = await fetch('/transcribe', { method: 'POST', body: formData });
             const data = await res.json();
             if (!res.ok || data.error) {
-                showToast(data.error || 'Chyba pri odeslani souboru');
+                showToast(data.error || 'Chyba při odeslání souboru');
                 goToStep(1);
                 stageTranscribe.classList.remove('active');
                 return;
             }
             taskId = data.task_id;
         } catch (e) {
-            showToast('Nelze se pripojit k serveru. Spustte server.py');
+            showToast('Nelze se připojit k serveru. Spusťte server.py');
             goToStep(1);
             stageTranscribe.classList.remove('active');
             return;
@@ -382,14 +382,14 @@
                     transcript = statusData.result;
                     break;
                 } else if (statusData.status === 'error') {
-                    showToast(statusData.error || 'Chyba pri transkripci');
+                    showToast(statusData.error || 'Chyba při transkripci');
                     goToStep(1);
                     stageTranscribe.classList.remove('active');
                     return;
                 }
                 // still processing — keep polling
             } catch {
-                showToast('Ztrata spojeni se serverem');
+                showToast('Ztráta spojení se serverem');
                 goToStep(1);
                 stageTranscribe.classList.remove('active');
                 return;
@@ -426,18 +426,18 @@
                 body.appendChild(p);
             });
         } else {
-            body.innerHTML = '<p>Transkripce nebyla ziskana.</p>';
+            body.innerHTML = '<p>Transkripce nebyla získána.</p>';
         }
-        $('#summaryBody').innerHTML = '<p><em>AI sumarizace bude dostupna po pripojeni modelu.</em></p>';
+        $('#summaryBody').innerHTML = '<p><em>AI sumarizace bude dostupná po připojení modelu.</em></p>';
     }
 
     /* ---- Results Actions ---- */
-    copyTranscript.addEventListener('click', () => copyTxt($('#transcriptBody').innerText, 'Transkript zkopirovan'));
-    copySummary.addEventListener('click', () => copyTxt($('#summaryBody').innerText, 'Shrnuti zkopirovano'));
+    copyTranscript.addEventListener('click', () => copyTxt($('#transcriptBody').innerText, 'Transkript zkopírován'));
+    copySummary.addEventListener('click', () => copyTxt($('#summaryBody').innerText, 'Shrnutí zkopírováno'));
 
     function copyTxt(t, m) { navigator.clipboard.writeText(t).then(() => showToast(m)); }
 
-    downloadPdf.addEventListener('click', () => showToast('PDF bude k dispozici po pripojeni backendu'));
+    downloadPdf.addEventListener('click', () => showToast('PDF bude k dispozici po připojení backendu'));
     newSession.addEventListener('click', resetApp);
 
     async function resetApp() {
