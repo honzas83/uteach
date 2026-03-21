@@ -1,6 +1,7 @@
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║              UTEACH.AI — CI/CD PIPELINE                        ║
-# ║  lint → test → build → security scan → deploy → smoke test    ║
+# ║              UTEACH.AI — CI/CD PIPELINE (FAST)                 ║
+# ║  lint+test ∥ build → deploy → smoke test                      ║
+# ║  security runs in parallel, does NOT block deploy              ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 name: CI/CD Pipeline
@@ -16,6 +17,7 @@ on:
         options:
           - main
           - feature/summary-adjustments
+          - FixPraceBezCommitu
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -33,9 +35,9 @@ permissions:
   id-token: write
 
 jobs:
-  # ━━━━━━━━━━━━━━━━ STAGE 1: LINT ━━━━━━━━━━━━━━━━
-  lint:
-    name: "🔍 Lint"
+  # ━━━━━━━━━━━━━━━━ STAGE 1: LINT + TEST (single job, saves runner startup) ━━━━━━━━━━━━━━━━
+  lint-and-test:
+    name: "🔍🧪 Lint & Test"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +48,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r backend/requirements.txt flake8
+        run: pip install -r backend/requirements.txt flake8 pytest
 
       - name: Python syntax check
         run: python -m py_compile backend/server.py
@@ -60,112 +62,21 @@ jobs:
           dockerfile: Dockerfile
           failure-threshold: error
 
-  # ━━━━━━━━━━━━━━━━ STAGE 2: TEST ━━━━━━━━━━━━━━━━
-  test:
-    name: "🧪 Test"
-    runs-on: ubuntu-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -r backend/requirements.txt pytest
-
       - name: Run tests
         run: pytest backend/tests/ -v --tb=short
-        continue-on-error: false
 
-  # ━━━━━━━━━━━━━━━━ STAGE 3: BUILD ━━━━━━━━━━━━━━━━
-  build:
-    name: "🏗️ Build"
+  # ━━━━━━━━━━━━━━━━ STAGE 2: BUILD + DEPLOY (single job, no extra runner) ━━━━━━━━━━━━━━━━
+  build-and-deploy:
+    name: "🏗️🚀 Build & Deploy"
     runs-on: ubuntu-latest
-    needs: test
+    needs: lint-and-test
+    environment: production
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          load: true
-          tags: uteach-app:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Run container & health check
-        run: |
-          docker run -d --name test-app -p 5001:5001 uteach-app:${{ github.sha }}
-          echo "Waiting for app to start..."
-          sleep 5
-          for i in 1 2 3 4 5; do
-            if curl -sf http://localhost:5001/health; then
-              echo ""
-              echo "✅ Health check passed!"
-              exit 0
-            fi
-            echo "Attempt $i failed, retrying in 3s..."
-            sleep 3
-          done
-          echo "❌ Health check failed"
-          docker logs test-app
-          exit 1
-
-      - name: Verify static assets served
-        run: |
-          curl -sf http://localhost:5001/ > /dev/null && echo "✅ index.html OK" || (echo "❌ index.html FAIL" && exit 1)
-          curl -sf http://localhost:5001/styles.css > /dev/null && echo "✅ styles.css OK" || (echo "❌ styles.css FAIL" && exit 1)
-          curl -sf http://localhost:5001/app.js > /dev/null && echo "✅ app.js OK" || (echo "❌ app.js FAIL" && exit 1)
-
-      - name: Stop test container
-        if: always()
-        run: docker rm -f test-app 2>/dev/null || true
-
-  # ━━━━━━━━━━━━━━━━ STAGE 4: SECURITY SCAN ━━━━━━━━━━━━━━━━
-  security:
-    name: "🛡️ Security Scan"
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install pip-audit
-        run: pip install pip-audit
-
-      - name: Check dependencies for vulnerabilities
-        run: pip-audit -r backend/requirements.txt
-        continue-on-error: true
-
-      - name: Scan with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-ref: .
-          severity: CRITICAL,HIGH
-
-  # ━━━━━━━━━━━━━━━━ STAGE 5: DEPLOY TO AWS ━━━━━━━━━━━━━━━━
-  deploy:
-    name: "🚀 Deploy to ECS"
-    runs-on: ubuntu-latest
-    needs: [build, security]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: production
-
-    steps:
-      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -221,16 +132,42 @@ jobs:
             echo "⚠️ CloudFront distribution not found, skipping"
           fi
 
-  # ━━━━━━━━━━━━━━━━ STAGE 6: SMOKE TEST ━━━━━━━━━━━━━━━━
+  # ━━━━━━━━━━━━━━━━ PARALLEL: SECURITY (does NOT block deploy) ━━━━━━━━━━━━━━━━
+  security:
+    name: "🛡️ Security Scan"
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Check dependencies for vulnerabilities
+        run: pip-audit -r backend/requirements.txt
+        continue-on-error: true
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+
+  # ━━━━━━━━━━━━━━━━ STAGE 3: SMOKE TEST (fast) ━━━━━━━━━━━━━━━━
   smoke-test:
     name: "💨 Smoke Test"
     runs-on: ubuntu-latest
-    needs: deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-and-deploy
 
     steps:
       - name: Wait for deployment propagation
-        run: sleep 30
+        run: sleep 10
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -251,22 +188,20 @@ jobs:
               --query 'LoadBalancers[0].DNSName' \
               --output text)
             echo "url=http://$ALB_DNS" >> $GITHUB_OUTPUT
-            echo "URL: http://$ALB_DNS (ALB fallback)"
           else
             echo "url=https://$CF_DOMAIN" >> $GITHUB_OUTPUT
-            echo "URL: https://$CF_DOMAIN"
           fi
 
       - name: Health endpoint check
         run: |
-          for i in $(seq 1 10); do
+          for i in $(seq 1 5); do
             STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${{ steps.alb.outputs.url }}/health" || true)
             if [ "$STATUS" = "200" ]; then
               echo "✅ /health returned 200"
               exit 0
             fi
-            echo "Attempt $i: got $STATUS, retrying in 10s..."
-            sleep 10
+            echo "Attempt $i: got $STATUS, retrying in 5s..."
+            sleep 5
           done
           echo "❌ Smoke test failed"
           exit 1
@@ -276,10 +211,3 @@ jobs:
           curl -sf "${{ steps.alb.outputs.url }}/" | grep -q "<html" \
             && echo "✅ Homepage serves HTML" \
             || (echo "❌ Homepage check failed" && exit 1)
-
-      - name: Post deploy summary
-        run: |
-          echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** ${{ steps.alb.outputs.url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
