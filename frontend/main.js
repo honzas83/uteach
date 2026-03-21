@@ -631,19 +631,11 @@
   function closeModal() {
     dom.privacyModal.classList.remove('modal-entering');
     dom.privacyModal.classList.add('modal-leaving');
-    const onEnd = () => {
+    // Always close after timeout — don't rely solely on animationend
+    setTimeout(() => {
       dom.privacyModal.classList.add('hidden');
       dom.privacyModal.classList.remove('modal-leaving');
-      dom.privacyModal.removeEventListener('animationend', onEnd);
-    };
-    dom.privacyModal.addEventListener('animationend', onEnd);
-    // Fallback in case animationend never fires
-    setTimeout(() => {
-      if (!dom.privacyModal.classList.contains('hidden')) {
-        dom.privacyModal.classList.add('hidden');
-        dom.privacyModal.classList.remove('modal-leaving');
-      }
-    }, 350);
+    }, 300);
   }
 
   function initModal() {
@@ -699,8 +691,9 @@
   /* ═══════════════ STEP TRANSITION HELPER ═══════════════ */
   function transitionStep(from, to, onVisible) {
     from.classList.add('step-leaving');
-    from.addEventListener('animationend', function handler() {
+    const handler = () => {
       from.removeEventListener('animationend', handler);
+      clearTimeout(fallback);
       from.classList.add('hidden');
       from.classList.remove('step-leaving');
       to.classList.remove('hidden');
@@ -710,7 +703,10 @@
         to.removeEventListener('animationend', h2);
         to.classList.remove('step-entering');
       });
-    });
+    };
+    from.addEventListener('animationend', handler);
+    // Fallback if animationend never fires
+    const fallback = setTimeout(handler, 500);
   }
 
   /* ── Markdown → HTML helper ── */
