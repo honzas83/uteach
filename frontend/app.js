@@ -142,8 +142,8 @@
     });
 
     function handleFile(file) {
-        if (!file.type.startsWith('audio/') && !file.type.startsWith('video/')) {
-            showToast('Vyberte prosím zvukový nebo video soubor');
+        if (!file.type.startsWith('audio/')) {
+            showToast('Vyberte prosím zvukový soubor');
             return;
         }
         currentFile = file;
@@ -555,10 +555,10 @@
 
         await delay(300);
         goToStep(3);
-        fillResults(transcript, summaryText, aiUsed ? rawTranscript : null);
+        fillResults(transcript, summaryText);
     }
 
-    function fillResults(transcript, summaryText, rawTranscript) {
+    function fillResults(transcript, summaryText) {
         const body = $('#transcriptBody');
         body.innerHTML = '';
         if (transcript) {
@@ -576,53 +576,11 @@
 
         // AI summary
         if (summaryText) {
-            html += '<div style="margin-bottom:16px;">';
             summaryText.split('\n').filter(Boolean).forEach(line => {
                 html += '<p>' + escHtml(line) + '</p>';
             });
-            html += '</div>';
         } else {
             html += '<p><em>Shrnutí nebylo vygenerováno.</em></p>';
-        }
-
-        // AI cleaning diff
-        if (rawTranscript && rawTranscript !== transcript) {
-            html += '<hr style="border:none;border-top:1px solid '
-                + 'var(--border);margin:16px 0;">';
-            html += '<p style="font-weight:600;font-size:0.82rem;'
-                + 'margin-bottom:8px;">'
-                + '🔍 Změny AI čištění:</p>';
-
-            const rawLines = rawTranscript.split('\n')
-                .filter(Boolean);
-            const cleanLines = transcript.split('\n')
-                .filter(Boolean);
-            const cleanSet = new Set(cleanLines);
-            const rawSet = new Set(rawLines);
-
-            const removed = rawLines.filter(l => !cleanSet.has(l));
-            const added = cleanLines.filter(l => !rawSet.has(l));
-
-            if (removed.length) {
-                removed.slice(0, 10).forEach(l => {
-                    html += '<p style="color:#e53e3e;font-size:0.78rem;'
-                        + 'text-decoration:line-through;opacity:0.7;">'
-                        + escHtml(l) + '</p>';
-                });
-                if (removed.length > 10) {
-                    html += '<p style="color:var(--text-3);'
-                        + 'font-size:0.75rem;">...a dalších '
-                        + (removed.length - 10) + ' řádků</p>';
-                }
-            }
-
-            if (added.length) {
-                added.slice(0, 10).forEach(l => {
-                    html += '<p style="color:#38a169;'
-                        + 'font-size:0.78rem;">'
-                        + escHtml(l) + '</p>';
-                });
-            }
         }
 
         summary.innerHTML = html;
