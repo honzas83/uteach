@@ -7,17 +7,10 @@
 name: CI/CD Pipeline
 
 on:
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Větev pro deploy'
-        required: true
-        default: 'main'
-        type: choice
-        options:
-          - main
-          - feature/summary-adjustments
-          - FixPraceBezCommitu
+  push:
+    branches:
+      - main
+      - FixPraceBezCommitu
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
