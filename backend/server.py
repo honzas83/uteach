@@ -39,12 +39,12 @@ FRONTEND_DIR = (
 OUTPUT_FILE = os.path.join(BASE_DIR, 'text.txt')
 PDF_DIR = os.path.join(BASE_DIR, 'pdfs')
 PROMPTS_FILE = os.path.join(
-    BASE_DIR, 'prompts', 'cs_claude_sonnet.yaml'
+    BASE_DIR, 'prompts', 'promptQWEN.yaml'
 )
 # Fallback: prompts may be one level up (local dev)
 if not os.path.exists(PROMPTS_FILE):
     PROMPTS_FILE = os.path.join(
-        BASE_DIR, '..', 'prompts', 'cs_claude_sonnet.yaml'
+        BASE_DIR, '..', 'prompts', 'promptQWEN.yaml'
     )
 
 os.makedirs(PDF_DIR, exist_ok=True)
@@ -673,22 +673,29 @@ def summarize():
 
     transcript = data['transcript']
 
-    system = (
-        "You are an academic assistant. Create a concise "
-        "summary of the lecture transcript.\n"
-        "Rules:\n"
-        "1. Write in the SAME language as the transcript.\n"
-        "2. Use bullet points for key topics.\n"
-        "3. Keep it under 300 words.\n"
-        "4. Start with a one-sentence overview.\n"
-        "5. Then list the main points covered.\n"
-        "6. Do NOT add information not in the transcript.\n"
-        "7. Do NOT include any meta-commentary."
-    )
+    # Use YAML prompt if available, otherwise fallback
+    if 'lecture_summary' in PROMPTS:
+        prompt_cfg = PROMPTS['lecture_summary']
+        system = prompt_cfg['template'].format(
+            subject_code='KKY',
+        )
+    else:
+        system = (
+            "Jsi akademický asistent. Vytvoř stručné shrnutí "
+            "přepisu přednášky.\n"
+            "Pravidla:\n"
+            "1. Piš ve STEJNÉM jazyce jako přepis.\n"
+            "2. Použij odrážky pro klíčová témata.\n"
+            "3. Nepřekračuj 300 slov.\n"
+            "4. Začni jednou větou přehledu.\n"
+            "5. Pak uveď hlavní probírané body.\n"
+            "6. NEPŘIDÁVEJ informace, které nejsou v přepisu.\n"
+            "7. NEZAHRNUJ žádný meta-komentář."
+        )
 
     try:
         summary = call_ollama_raw(
-            system, f"Transcript:\n{transcript}",
+            system, f"Přepis přednášky:\n\n{transcript}",
         )
         return jsonify({'summary': summary})
     except Exception as e:
