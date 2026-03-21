@@ -5,7 +5,7 @@ import requests
 from flask import Flask, request, jsonify, send_from_directory
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(BASE_DIR, 'frontend')
+FRONTEND_DIR = os.path.join(BASE_DIR, '..', 'frontend')
 OUTPUT_FILE = os.path.join(BASE_DIR, 'text.txt')
 
 app = Flask(__name__, static_folder=FRONTEND_DIR)
