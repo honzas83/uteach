@@ -39,8 +39,13 @@ FRONTEND_DIR = (
 OUTPUT_FILE = os.path.join(BASE_DIR, 'text.txt')
 PDF_DIR = os.path.join(BASE_DIR, 'pdfs')
 PROMPTS_FILE = os.path.join(
-    BASE_DIR, '..', 'prompts', 'cs_claude_sonnet.yaml'
+    BASE_DIR, 'prompts', 'cs_claude_sonnet.yaml'
 )
+# Fallback: prompts may be one level up (local dev)
+if not os.path.exists(PROMPTS_FILE):
+    PROMPTS_FILE = os.path.join(
+        BASE_DIR, '..', 'prompts', 'cs_claude_sonnet.yaml'
+    )
 
 os.makedirs(PDF_DIR, exist_ok=True)
 
@@ -86,8 +91,10 @@ if os.path.exists(PROMPTS_FILE):
             p['id']: p
             for p in yaml.safe_load(_f)['prompts']
         }
+    logging.info('Loaded %d prompts from %s', len(PROMPTS), PROMPTS_FILE)
 else:
     PROMPTS = {}
+    logging.warning('Prompts file not found: %s', PROMPTS_FILE)
 
 # ── KKY University Ollama ─────────────────────────────────────────
 OLLAMA_HOST = 'https://ollama.kky.zcu.cz'
