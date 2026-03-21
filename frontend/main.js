@@ -1,0 +1,898 @@
+/* ═══════════════════════════════════════════════════
+   UTEACH.AI — Main Application Logic
+   Premium lecture processing UI
+   ═══════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  /* ─────────── Helpers ─────────── */
+  const $ = (s, ctx = document) => ctx.querySelector(s);
+  const $$ = (s, ctx = document) => [...ctx.querySelectorAll(s)];
+
+  /* ─────────── DOM refs ─────────── */
+  const dom = {
+    themeToggle:      $('#themeToggle'),
+    statusBadge:      $('#statusBadge'),
+    statusText:       $('#statusText'),
+    stepperFill:      $('#stepperFill'),
+    stepDots:         [1, 2, 3].map(i => $(`#stepDot${i}`)),
+    stepLabels:       [1, 2, 3].map(i => $(`#stepLabel${i}`)),
+    tabs:             $$('.tab'),
+    uploadPanel:      $('#uploadPanel'),
+    recordPanel:      $('#recordPanel'),
+    dropzone:         $('#dropzone'),
+    fileInput:        $('#fileInput'),
+    browseBtn:        $('#browseBtn'),
+    filePreview:      $('#filePreview'),
+    fileName:         $('#fileName'),
+    fileSize:         $('#fileSize'),
+    removeFile:       $('#removeFile'),
+    miniWaveCanvas:   $('#miniWaveCanvas'),
+    micSelect:        $('#micSelect'),
+    recordBtn:        $('#recordBtn'),
+    recordIcon:       $('#recordIcon'),
+    stopIcon:         $('#stopIcon'),
+    recorderTime:     $('#recorderTime'),
+    recorderHint:     $('#recorderHint'),
+    waveCanvas:       $('#waveCanvas'),
+    levelIndicator:   $('#levelIndicator'),
+    recordingPreview: $('#recordingPreview'),
+    recordingDuration:$('#recordingDuration'),
+    discardRecording: $('#discardRecording'),
+    submitBtn:        $('#submitBtn'),
+    submitText:       $('#submitText'),
+    btnSpinner:       $('#btnSpinner'),
+    step1:            $('#step1'),
+    step2:            $('#step2'),
+    step3:            $('#step3'),
+    procStages:       [1, 2, 3].map(i => $(`#proc${i}`)),
+    resultSummary:    $('#resultSummary'),
+    summaryContent:   $('#summaryContent'),
+    editInstructions: $('#editInstructions'),
+    regenerateBtn:    $('#regenerateBtn'),
+    downloadPdf:      $('#downloadPdf'),
+    newSession:       $('#newSession'),
+    privacyModal:     $('#privacyModal'),
+    modalBackdrop:    $('#modalBackdrop'),
+    modalContent:     $('#modalContent'),
+    modalClose:       $('#modalClose'),
+    privacySkip:      $('#privacySkip'),
+    privacyConfirm:   $('#privacyConfirm'),
+    studentDropzone:  $('#studentDropzone'),
+    studentFileInput: $('#studentFileInput'),
+    studentFileTag:   $('#studentFileTag'),
+    studentFileName:  $('#studentFileName'),
+    removeStudentFile:$('#removeStudentFile'),
+    customInstructions:$('#customInstructions'),
+    toast:            $('#toast'),
+    toastMessage:     $('#toastMessage'),
+  };
+
+  /* ─────────── State ─────────── */
+  const state = {
+    currentStep:   1,
+    uploadedFile:  null,
+    recordedBlob:  null,
+    isRecording:   false,
+    mediaRecorder: null,
+    audioChunks:   [],
+    audioStream:   null,
+    analyser:      null,
+    audioCtx:      null,
+    animFrame:     null,
+    recStartTime:  0,
+    timerInterval: null,
+    studentFile:   null,
+  };
+
+  /* ═══════════════ THEME ═══════════════ */
+  function initTheme() {
+    const saved = localStorage.getItem('uteach-theme');
+    if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+    dom.themeToggle.addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
+      localStorage.setItem('uteach-theme',
+        document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+      );
+    });
+  }
+
+  /* ═══════════════ STATUS BADGE (removed from UI) ═══════════════ */
+  function setStatus() { /* badge removed — no-op */ }
+
+  /* ═══════════════ STEPPER ═══════════════ */
+  function updateStepper(step) {
+    state.currentStep = step;
+    const pct = step === 1 ? 0 : step === 2 ? 50 : 100;
+    const maxWidth = 66.67;
+    dom.stepperFill.style.width = (pct / 100 * maxWidth) + '%';
+
+    dom.stepDots.forEach((dot, i) => {
+      const s = i + 1;
+      dot.className = 'step-dot w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold border-2 transition-all duration-300 ';
+      if (s < step) {
+        dot.className += 'border-brand-500 bg-brand-500 text-white';
+        dot.innerHTML = '<i data-lucide="check" class="w-4 h-4"></i>';
+        if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [dot] });
+      } else if (s === step) {
+        dot.className += 'border-brand-500 bg-brand-500 text-white';
+        dot.textContent = s;
+      } else {
+        dot.className += 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500';
+        dot.textContent = s;
+      }
+    });
+
+    dom.stepLabels.forEach((label, i) => {
+      const s = i + 1;
+      label.className = 'text-xs font-medium transition-colors duration-200 ';
+      if (s <= step) label.className += 'text-brand-600 dark:text-brand-400';
+      else label.className += 'text-zinc-400 dark:text-zinc-500';
+    });
+  }
+
+  /* ═══════════════ TAB SWITCHING ═══════════════ */
+  function initTabs() {
+    dom.tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        const wasActive = dom.tabs.find(t => t.classList.contains('active'));
+        if (wasActive && wasActive.dataset.tab === target) return;
+
+        dom.tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        const show = target === 'upload' ? dom.uploadPanel : dom.recordPanel;
+        const hide = target === 'upload' ? dom.recordPanel : dom.uploadPanel;
+
+        hide.classList.add('hidden');
+        show.classList.remove('hidden');
+        show.classList.add('tab-panel-enter');
+        show.addEventListener('animationend', () => {
+          show.classList.remove('tab-panel-enter');
+        }, { once: true });
+      });
+    });
+  }
+
+  /* ═══════════════ FILE UPLOAD ═══════════════ */
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function fakeDuration() {
+    const min = Math.floor(Math.random() * 60) + 5;
+    const sec = Math.floor(Math.random() * 60);
+    return '~' + min + ':' + sec.toString().padStart(2, '0');
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    const validTypes = ['audio/', 'video/'];
+    const validExt = /\.(mp3|wav|mp4|m4a|ogg|webm|flac)$/i;
+    if (!validTypes.some(t => file.type.startsWith(t)) && !validExt.test(file.name)) {
+      showToast('Nepodporovaný formát souboru');
+      return;
+    }
+    if (file.size > 500 * 1024 * 1024) {
+      showToast('Soubor je příliš velký (max 500 MB)');
+      return;
+    }
+    state.uploadedFile = file;
+    state.recordedBlob = null;
+    dom.fileName.textContent = file.name;
+    dom.fileSize.textContent = formatSize(file.size) + ' \u2022 ' + fakeDuration();
+    dom.dropzone.classList.add('hidden');
+    dom.filePreview.classList.remove('hidden');
+    drawMiniWaveform();
+    updateSubmitBtn();
+  }
+
+  function clearFile() {
+    state.uploadedFile = null;
+    dom.fileInput.value = '';
+    dom.dropzone.classList.remove('hidden');
+    dom.filePreview.classList.add('hidden');
+    updateSubmitBtn();
+  }
+
+  function drawMiniWaveform() {
+    const canvas = dom.miniWaveCanvas;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    const isDark = document.documentElement.classList.contains('dark');
+    const color = isDark ? 'rgba(108, 108, 214, 0.4)' : 'rgba(108, 108, 214, 0.25)';
+    const barW = 3;
+    const gap = 2;
+    const total = Math.floor(rect.width / (barW + gap));
+    const mid = rect.height / 2;
+
+    ctx.fillStyle = color;
+    for (let i = 0; i < total; i++) {
+      const h = Math.random() * (rect.height * 0.7) + rect.height * 0.1;
+      const x = i * (barW + gap);
+      ctx.beginPath();
+      ctx.roundRect(x, mid - h / 2, barW, h, 1.5);
+      ctx.fill();
+    }
+  }
+
+  function initUpload() {
+    dom.browseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dom.fileInput.click();
+    });
+    dom.dropzone.addEventListener('click', () => dom.fileInput.click());
+    dom.fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+    dom.removeFile.addEventListener('click', clearFile);
+
+    ['dragenter', 'dragover'].forEach(evt => {
+      dom.dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dom.dropzone.classList.add('dropzone-active');
+      });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+      dom.dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        dom.dropzone.classList.remove('dropzone-active');
+      });
+    });
+    dom.dropzone.addEventListener('drop', (e) => {
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+  }
+
+  /* ═══════════════ MICROPHONE ═══════════════ */
+  async function loadMicrophones() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      dom.micSelect.innerHTML = '';
+      if (mics.length === 0) {
+        dom.micSelect.innerHTML = '<option>Žádný mikrofon</option>';
+        return;
+      }
+      mics.forEach((mic, i) => {
+        const opt = document.createElement('option');
+        opt.value = mic.deviceId;
+        opt.textContent = mic.label || ('Mikrofon ' + (i + 1));
+        dom.micSelect.appendChild(opt);
+      });
+    } catch (err) {
+      dom.micSelect.innerHTML = '<option>Přístup odepřen</option>';
+    }
+  }
+
+  /* ═══════════════ RECORDING ═══════════════ */
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0');
+  }
+
+  async function startRecording() {
+    try {
+      const deviceId = dom.micSelect.value;
+      const constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      state.audioStream = stream;
+
+      const audioCtx = new AudioContext();
+      state.audioCtx = audioCtx;
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      state.analyser = analyser;
+
+      const recorder = new MediaRecorder(stream);
+      state.mediaRecorder = recorder;
+      state.audioChunks = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) state.audioChunks.push(e.data);
+      };
+      recorder.onstop = () => {
+        state.recordedBlob = new Blob(state.audioChunks, { type: 'audio/webm' });
+        state.audioChunks = [];
+        finishRecording();
+      };
+
+      recorder.start();
+      state.isRecording = true;
+      state.currentVolume = 0;
+      state.recStartTime = Date.now();
+
+      // Visual recording state
+      dom.recordIcon.classList.add('hidden');
+      dom.stopIcon.classList.remove('hidden');
+      dom.recordBtn.classList.add('recording');
+      dom.recorderHint.textContent = 'Nahrávání\u2026 klikněte pro zastavení';
+      dom.recorderTime.classList.remove('text-zinc-300', 'dark:text-zinc-600');
+      dom.recorderTime.classList.add('text-red-500');
+      setStatus('Nahrávání\u2026', 'recording');
+
+      // Glow the waveform container
+      const waveWrap = dom.waveCanvas.parentElement;
+      waveWrap.classList.add('recording-glow');
+
+      // Show level indicator
+      if (dom.levelIndicator) {
+        dom.levelIndicator.classList.remove('hidden');
+        dom.levelIndicator.textContent = 'Ticho';
+      }
+
+      state.timerInterval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - state.recStartTime) / 1000);
+        dom.recorderTime.textContent = formatTime(elapsed);
+      }, 1000);
+
+      // Volume‑reactive glow loop
+      startVolumeGlow();
+      drawWaveform();
+    } catch (err) {
+      showToast('Nelze získat přístup k mikrofonu');
+    }
+  }
+
+  function stopRecording() {
+    if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+      state.mediaRecorder.stop();
+    }
+    if (state.audioStream) {
+      state.audioStream.getTracks().forEach(t => t.stop());
+    }
+    if (state.audioCtx) {
+      state.audioCtx.close();
+      state.audioCtx = null;
+    }
+    state.isRecording = false;
+    clearInterval(state.timerInterval);
+    cancelAnimationFrame(state.animFrame);
+    cancelAnimationFrame(state.glowFrame);
+
+    // Freeze the waveform history as a static grayscale snapshot
+    freezeWaveform();
+
+    dom.recordIcon.classList.remove('hidden');
+    dom.stopIcon.classList.add('hidden');
+    dom.recordBtn.classList.remove('recording');
+    dom.recordBtn.style.boxShadow = '';
+    dom.recorderTime.classList.add('text-zinc-300', 'dark:text-zinc-600');
+    dom.recorderTime.classList.remove('text-red-500');
+
+    // Remove waveform container glow
+    const waveWrap = dom.waveCanvas.parentElement;
+    waveWrap.classList.remove('recording-glow');
+
+    // Hide level indicator
+    if (dom.levelIndicator) dom.levelIndicator.classList.add('hidden');
+
+    setStatus('Připraveno', 'ready');
+  }
+
+  function finishRecording() {
+    const elapsed = Math.floor((Date.now() - state.recStartTime) / 1000);
+    dom.recordingDuration.textContent = formatTime(elapsed);
+    dom.recordingPreview.classList.remove('hidden');
+    dom.recorderHint.textContent = 'Nahrávka připravena';
+    state.uploadedFile = null;
+    updateSubmitBtn();
+  }
+
+  function discardRecording() {
+    state.recordedBlob = null;
+    dom.recordingPreview.classList.add('hidden');
+    dom.recorderTime.textContent = '00:00';
+    dom.recorderHint.textContent = 'Klikněte pro zahájení nahrávání';
+    clearWaveCanvas();
+    updateSubmitBtn();
+    drawIdleWave(); // bring back the idle animation
+  }
+
+  function initRecording() {
+    dom.recordBtn.addEventListener('click', () => {
+      if (state.isRecording) stopRecording();
+      else startRecording();
+    });
+    dom.discardRecording.addEventListener('click', discardRecording);
+  }
+
+  /* ═══════════════ WAVEFORM (CANVAS) ═══════════════ */
+  // Scrolling history buffer — each entry is a smoothed RMS amplitude (0‒1)
+  const waveHistory = [];
+  let smoothedRMS = 0;
+
+  function drawWaveform() {
+    const canvas = dom.waveCanvas;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const analyser = state.analyser;
+    if (!analyser) return;
+
+    const barW = 3;
+    const gap = 2;
+    const maxBars = Math.floor(rect.width / (barW + gap));
+    const mid = rect.height / 2;
+    const timeDomain = new Uint8Array(analyser.fftSize);
+
+    waveHistory.length = 0;
+    smoothedRMS = 0;
+
+    function draw() {
+      if (!state.isRecording) return;
+      state.animFrame = requestAnimationFrame(draw);
+
+      analyser.getByteTimeDomainData(timeDomain);
+
+      // Compute RMS from time‑domain data
+      let sumSq = 0;
+      for (let i = 0; i < timeDomain.length; i++) {
+        const v = (timeDomain[i] - 128) / 128;
+        sumSq += v * v;
+      }
+      const rms = Math.sqrt(sumSq / timeDomain.length);
+      // Exponential smoothing — fast attack, slow release
+      smoothedRMS = rms > smoothedRMS
+        ? smoothedRMS + (rms - smoothedRMS) * 0.35
+        : smoothedRMS + (rms - smoothedRMS) * 0.12;
+
+      // Push to scrolling history
+      waveHistory.push(smoothedRMS);
+      if (waveHistory.length > maxBars) waveHistory.shift();
+
+      // Expose current volume for record‑button glow
+      state.currentVolume = smoothedRMS;
+
+      // Draw
+      const isDark = document.documentElement.classList.contains('dark');
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      const barCount = waveHistory.length;
+      const startX = (maxBars - barCount) * (barW + gap);
+
+      for (let i = 0; i < barCount; i++) {
+        const amp = waveHistory[i];
+        const h = Math.max(2, amp * rect.height * 1.6 + 2);
+        const x = startX + i * (barW + gap);
+        const age = 1 - (barCount - 1 - i) / maxBars; // 0..1, newest = 1
+
+        // Red gradient bar — opacity fades with age
+        const alpha = isDark
+          ? 0.2 + amp * 0.55 * (0.3 + age * 0.7)
+          : 0.15 + amp * 0.5 * (0.3 + age * 0.7);
+        ctx.fillStyle = `rgba(239, 68, 68, ${Math.min(alpha, 0.85)})`;
+        ctx.beginPath();
+        ctx.roundRect(x, mid - h / 2, barW, h, 1.5);
+        ctx.fill();
+
+        // Mirror reflection (half height, lower opacity)
+        const mirrorH = h * 0.35;
+        const mirrorAlpha = alpha * 0.25;
+        ctx.fillStyle = `rgba(239, 68, 68, ${Math.min(mirrorAlpha, 0.2)})`;
+        ctx.beginPath();
+        ctx.roundRect(x, mid + h / 2 + 1, barW, mirrorH, 1.5);
+        ctx.fill();
+      }
+
+      // Playhead glow on the newest bar
+      if (barCount > 0) {
+        const lastX = startX + (barCount - 1) * (barW + gap);
+        const lastH = Math.max(2, waveHistory[barCount - 1] * rect.height * 1.6 + 2);
+        ctx.save();
+        ctx.shadowColor = 'rgba(239, 68, 68, 0.5)';
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
+        ctx.beginPath();
+        ctx.roundRect(lastX, mid - lastH / 2, barW, lastH, 1.5);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Update level indicator
+      updateLevelIndicator(smoothedRMS);
+    }
+    draw();
+  }
+
+  function clearWaveCanvas() {
+    const canvas = dom.waveCanvas;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    waveHistory.length = 0;
+    smoothedRMS = 0;
+  }
+
+  /**
+   * After recording stops, freeze the last waveform snapshot on canvas.
+   * Called from stopRecording() so the user sees what they captured.
+   */
+  function freezeWaveform() {
+    const canvas = dom.waveCanvas;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const barW = 3;
+    const gap = 2;
+    const maxBars = Math.floor(rect.width / (barW + gap));
+    const mid = rect.height / 2;
+    const isDark = document.documentElement.classList.contains('dark');
+
+    const barCount = waveHistory.length;
+    const startX = (maxBars - barCount) * (barW + gap);
+
+    for (let i = 0; i < barCount; i++) {
+      const amp = waveHistory[i];
+      const h = Math.max(2, amp * rect.height * 1.6 + 2);
+      const x = startX + i * (barW + gap);
+
+      const alpha = isDark ? 0.15 + amp * 0.3 : 0.12 + amp * 0.25;
+      ctx.fillStyle = isDark
+        ? `rgba(113, 113, 122, ${alpha})`
+        : `rgba(161, 161, 170, ${alpha})`;
+      ctx.beginPath();
+      ctx.roundRect(x, mid - h / 2, barW, h, 1.5);
+      ctx.fill();
+    }
+  }
+
+  /* ── Level Indicator ── */
+  function updateLevelIndicator(rms) {
+    const el = dom.levelIndicator;
+    if (!el) return;
+    const db = rms > 0 ? 20 * Math.log10(rms) : -60;
+    if (db < -40) {
+      el.textContent = 'Ticho';
+      el.className = 'level-indicator text-[11px] font-medium transition-colors duration-200 text-zinc-300 dark:text-zinc-600';
+    } else if (db < -20) {
+      el.textContent = 'Dobrá úroveň';
+      el.className = 'level-indicator text-[11px] font-medium transition-colors duration-200 text-emerald-500';
+    } else {
+      el.textContent = 'Příliš hlasité';
+      el.className = 'level-indicator text-[11px] font-medium transition-colors duration-200 text-amber-500';
+    }
+  }
+
+  /* ── Volume‑Reactive Button Glow ── */
+  function startVolumeGlow() {
+    function tick() {
+      if (!state.isRecording) return;
+      state.glowFrame = requestAnimationFrame(tick);
+      const v = state.currentVolume || 0;
+      // Map volume (0‑1) to glow intensity
+      const spread = 10 + v * 25;
+      const alpha = 0.15 + v * 0.45;
+      dom.recordBtn.style.boxShadow =
+        `0 0 ${spread}px rgba(239, 68, 68, ${alpha})`;
+    }
+    state.glowFrame = requestAnimationFrame(tick);
+  }
+
+  /* ═══════════════ SUBMIT BUTTON ═══════════════ */
+  function updateSubmitBtn() {
+    const hasInput = !!(state.uploadedFile || state.recordedBlob);
+    dom.submitBtn.disabled = !hasInput;
+  }
+
+  function initSubmit() {
+    dom.submitBtn.addEventListener('click', () => {
+      if (dom.submitBtn.disabled) return;
+      openModal();
+    });
+  }
+
+  /* ═══════════════ PRIVACY MODAL ═══════════════ */
+  function openModal() {
+    dom.privacyModal.classList.remove('hidden');
+    dom.privacyModal.classList.remove('modal-leaving');
+    dom.privacyModal.classList.add('modal-entering');
+  }
+
+  function closeModal() {
+    dom.privacyModal.classList.remove('modal-entering');
+    dom.privacyModal.classList.add('modal-leaving');
+    const onEnd = () => {
+      dom.privacyModal.classList.add('hidden');
+      dom.privacyModal.classList.remove('modal-leaving');
+      dom.privacyModal.removeEventListener('animationend', onEnd);
+    };
+    dom.privacyModal.addEventListener('animationend', onEnd);
+    // Fallback in case animationend never fires
+    setTimeout(() => {
+      if (!dom.privacyModal.classList.contains('hidden')) {
+        dom.privacyModal.classList.add('hidden');
+        dom.privacyModal.classList.remove('modal-leaving');
+      }
+    }, 350);
+  }
+
+  function initModal() {
+    dom.modalClose.addEventListener('click', closeModal);
+    dom.modalBackdrop.addEventListener('click', closeModal);
+    dom.privacySkip.addEventListener('click', () => {
+      closeModal();
+      setTimeout(startProcessing, 350);
+    });
+    dom.privacyConfirm.addEventListener('click', () => {
+      closeModal();
+      setTimeout(startProcessing, 350);
+    });
+
+    dom.studentDropzone.addEventListener('click', () => dom.studentFileInput.click());
+    dom.studentFileInput.addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (f) {
+        state.studentFile = f;
+        dom.studentFileName.textContent = f.name;
+        dom.studentFileTag.classList.remove('hidden');
+        dom.studentDropzone.classList.add('hidden');
+      }
+    });
+    dom.removeStudentFile.addEventListener('click', () => {
+      state.studentFile = null;
+      dom.studentFileInput.value = '';
+      dom.studentFileTag.classList.add('hidden');
+      dom.studentDropzone.classList.remove('hidden');
+    });
+  }
+
+  /* ═══════════════ STEP TRANSITION HELPER ═══════════════ */
+  function transitionStep(from, to, onVisible) {
+    from.classList.add('step-leaving');
+    from.addEventListener('animationend', function handler() {
+      from.removeEventListener('animationend', handler);
+      from.classList.add('hidden');
+      from.classList.remove('step-leaving');
+      to.classList.remove('hidden');
+      to.classList.add('step-entering');
+      if (onVisible) onVisible();
+      to.addEventListener('animationend', function h2() {
+        to.removeEventListener('animationend', h2);
+        to.classList.remove('step-entering');
+      });
+    });
+  }
+
+  /* ═══════════════ PROCESSING SIMULATION ═══════════════ */
+  function startProcessing() {
+    transitionStep(dom.step1, dom.step2, () => {
+      updateStepper(2);
+      setStatus('Zpracování\u2026', 'processing');
+
+      const stages = dom.procStages;
+      activateStage(stages[0]);
+
+      setTimeout(() => {
+        completeStage(stages[0]);
+        activateStage(stages[1]);
+      }, 1800);
+
+      setTimeout(() => {
+        completeStage(stages[1]);
+        activateStage(stages[2]);
+      }, 4200);
+
+      setTimeout(() => {
+        completeStage(stages[2]);
+        setTimeout(showResults, 600);
+      }, 6500);
+    });
+  }
+
+  function activateStage(el) {
+    el.classList.add('proc-active');
+    const icon = el.querySelector('.proc-icon');
+    icon.classList.add('bg-brand-50', 'dark:bg-brand-500/10', 'text-brand-500');
+  }
+
+  function completeStage(el) {
+    el.classList.remove('proc-active');
+    el.classList.add('proc-done');
+    const check = el.querySelector('.proc-check');
+    // checkPop animation in CSS handles opacity
+    check.style.opacity = '';
+    check.classList.remove('opacity-0');
+    const icon = el.querySelector('.proc-icon');
+    icon.classList.remove('bg-brand-50', 'dark:bg-brand-500/10', 'text-brand-500');
+    icon.classList.add('bg-emerald-50', 'dark:bg-emerald-500/10', 'text-emerald-500');
+  }
+
+  /* ═══════════════ RESULTS ═══════════════ */
+  const MOCK_TRANSCRIPT = 'Dobrý den, vítejte na dnešní přednášce z předmětu Umělá inteligence a strojové učení. Dnes se budeme zabývat tématem neuronových sítí, konkrétně architekturou transformerů.\n\nTransformer byl poprvé představen v článku "Attention Is All You Need" z roku 2017. Klíčovou inovací je mechanismus self-attention, který umožňuje modelu zpracovávat všechny pozice ve vstupní sekvenci paralelně, na rozdíl od rekurentních sítí.\n\nArchitektura se skládá z encoderu a decoderu. Encoder zpracovává vstupní sekvenci a vytváří kontextové reprezentace. Decoder pak generuje výstupní sekvenci token po tokenu.\n\nMechanismus pozornosti funguje tak, že pro každý token vypočítáme tři vektory: Query, Key a Value. Výpočet attention score je pak dot product Query a Key, normalizovaný odmocninou dimenze, následovaný softmax funkcí.\n\nMulti-head attention umožňuje modelu zaměřit se na různé části vstupu současně. Každá "hlava" se může specializovat na jiný typ vztahu mezi tokeny.\n\nPositional encoding je nezbytný, protože mechanismus attention sám o sobě nezohledňuje pořadí tokenů. Používáme sinusoidální funkce nebo naučené pozicové embeddingy.\n\nNa závěr bych chtěl zmínit, že transformery jsou základem moderních jazykových modelů jako GPT, BERT a další. V příští přednášce se podíváme na konkrétní implementaci v PyTorch.\n\nDěkuji za pozornost, uvidíme se příště.';
+
+  const MOCK_SUMMARY = '<h3 class="text-base font-semibold mb-4 text-zinc-900 dark:text-zinc-100">\u{1F4DA} Souhrn přednášky</h3><div class="space-y-5"><div><h4 class="text-sm font-semibold text-brand-600 dark:text-brand-400 mb-1.5">\u{1F4CB} Téma</h4><p>Neuronové sítě \u2014 architektura Transformerů</p></div><div><h4 class="text-sm font-semibold text-brand-600 dark:text-brand-400 mb-1.5">\u{1F511} Klíčové body</h4><ul class="list-disc list-inside space-y-1.5 text-zinc-500 dark:text-zinc-400"><li>Transformer představen v článku \u201CAttention Is All You Need\u201D (2017)</li><li>Self-attention mechanismus \u2014 paralelní zpracování sekvencí</li><li>Architektura: Encoder (kontextové reprezentace) + Decoder (generování)</li><li>Attention: Query, Key, Value vektory + softmax normalizace</li><li>Multi-head attention \u2014 specializace na různé vztahy</li><li>Positional encoding \u2014 sinusoidální / naučené embeddingy</li></ul></div><div><h4 class="text-sm font-semibold text-brand-600 dark:text-brand-400 mb-1.5">\u{1F4CC} Závěr</h4><p>Transformery tvoří základ moderních LLM (GPT, BERT). Příští přednáška: implementace v PyTorch.</p></div></div>';
+
+  function showResults() {
+    transitionStep(dom.step2, dom.step3, () => {
+      updateStepper(3);
+      setStatus('Hotovo', 'done');
+
+      dom.summaryContent.innerHTML = MOCK_SUMMARY;
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    });
+  }
+
+  function typeText(el, text) {
+    el.textContent = '';
+    let i = 0;
+    const charsPerFrame = 3;
+    let last = 0;
+    const interval = 8; // ms between chunks
+
+    function tick(ts) {
+      if (i >= text.length) return;
+      if (ts - last < interval) { requestAnimationFrame(tick); return; }
+      last = ts;
+      const chunk = text.slice(i, i + charsPerFrame);
+      el.textContent += chunk;
+      i += charsPerFrame;
+      el.parentElement.scrollTop = el.parentElement.scrollHeight;
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function initResults() {
+    dom.regenerateBtn.addEventListener('click', () => {
+      const instructions = dom.editInstructions.value.trim();
+      if (!instructions) { showToast('Napište, co chcete změnit'); return; }
+      showToast('Přegenerováváme souhrn\u2026');
+      dom.editInstructions.value = '';
+      // In real app, call API with instructions; for now just re-render mock
+      setTimeout(() => {
+        dom.summaryContent.innerHTML = MOCK_SUMMARY;
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        showToast('Souhrn aktualizován');
+      }, 1500);
+    });
+
+    dom.downloadPdf.addEventListener('click', () => {
+      showToast('Stahování PDF\u2026');
+      // Placeholder — real implementation would generate PDF
+    });
+
+    dom.newSession.addEventListener('click', resetApp);
+  }
+
+  /* ═══════════════ RESET ═══════════════ */
+  function resetApp() {
+    state.uploadedFile = null;
+    state.recordedBlob = null;
+    state.studentFile = null;
+    dom.fileInput.value = '';
+    dom.dropzone.classList.remove('hidden');
+    dom.filePreview.classList.add('hidden');
+    dom.recordingPreview.classList.add('hidden');
+    dom.recorderTime.textContent = '00:00';
+    dom.recorderHint.textContent = 'Klikněte pro zahájení nahrávání';
+    clearWaveCanvas();
+    dom.submitBtn.disabled = true;
+    dom.btnSpinner.classList.add('hidden');
+    if (dom.submitText) dom.submitText.classList.remove('opacity-0');
+    dom.summaryContent.innerHTML = '';
+    dom.editInstructions.value = '';
+    dom.customInstructions.value = '';
+    dom.studentFileInput.value = '';
+    dom.studentFileTag.classList.add('hidden');
+    dom.studentDropzone.classList.remove('hidden');
+
+    dom.procStages.forEach(el => {
+      el.classList.remove('proc-active', 'proc-done');
+      const check = el.querySelector('.proc-check');
+      check.classList.remove('opacity-100');
+      check.classList.add('opacity-0');
+      const icon = el.querySelector('.proc-icon');
+      icon.className = 'proc-icon w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-300';
+    });
+
+    dom.tabs.forEach(t => t.classList.remove('active'));
+    dom.tabs[0].classList.add('active');
+    dom.uploadPanel.classList.remove('hidden');
+    dom.recordPanel.classList.add('hidden');
+
+    dom.step3.classList.add('hidden');
+    dom.step2.classList.add('hidden');
+    dom.step1.classList.remove('hidden');
+    updateStepper(1);
+    setStatus('Připraveno', 'ready');
+  }
+
+  /* ═══════════════ TOAST ═══════════════ */
+  function showToast(msg) {
+    dom.toastMessage.textContent = msg;
+    dom.toast.classList.remove('translate-y-4', 'opacity-0', 'pointer-events-none');
+    dom.toast.classList.add('translate-y-0', 'opacity-100');
+    setTimeout(() => {
+      dom.toast.classList.add('translate-y-4', 'opacity-0', 'pointer-events-none');
+      dom.toast.classList.remove('translate-y-0', 'opacity-100');
+    }, 2500);
+  }
+
+  /* ═══════════════ IDLE WAVEFORM ANIMATION ═══════════════ */
+  function drawIdleWave() {
+    const canvas = dom.waveCanvas;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const barW = 3;
+    const gap = 2;
+    const total = Math.floor(rect.width / (barW + gap));
+    const mid = rect.height / 2;
+
+    function animate(ts) {
+      if (state.isRecording) return;
+      const isDark = document.documentElement.classList.contains('dark');
+      const t = ts * 0.001; // seconds
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      for (let i = 0; i < total; i++) {
+        const norm = i / total;
+        // Multi-sine blend for natural organic motion
+        const wave1 = Math.sin(norm * 4.5 + t * 1.2) * 2.5;
+        const wave2 = Math.sin(norm * 7.0 - t * 0.8) * 1.5;
+        const wave3 = Math.sin(norm * 2.0 + t * 0.5) * 1.0;
+        const h = Math.max(2, 4 + wave1 + wave2 + wave3);
+        const x = i * (barW + gap);
+        // Subtle opacity variation per bar
+        const alpha = isDark ? 0.12 + Math.abs(wave1) * 0.02 : 0.16 + Math.abs(wave1) * 0.03;
+        ctx.fillStyle = isDark
+          ? `rgba(113, 113, 122, ${alpha})`
+          : `rgba(161, 161, 170, ${alpha})`;
+        ctx.beginPath();
+        ctx.roundRect(x, mid - h / 2, barW, h, 1.5);
+        ctx.fill();
+      }
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  }
+
+  /* ═══════════════ INIT ═══════════════ */
+  function init() {
+    initTheme();
+    initTabs();
+    initUpload();
+    initRecording();
+    initSubmit();
+    initModal();
+    initResults();
+    loadMicrophones();
+    updateStepper(1);
+    drawIdleWave();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
