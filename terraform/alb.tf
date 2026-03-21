@@ -23,7 +23,7 @@ resource "aws_lb" "main" {
 # Target Group
 # ==============================================================
 resource "aws_lb_target_group" "app" {
-  name        = "${var.project_name}-tg"
+  name_prefix = "wb-tg-"
   port        = var.app_port
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
@@ -37,6 +37,7 @@ resource "aws_lb_target_group" "app" {
     interval            = 30
     path                = "/health"
     protocol            = "HTTP"
+    port                = "traffic-port"
     matcher             = "200-299"
   }
 

@@ -27,3 +27,7 @@ app_environment_vars = {
 # HTTPS (volitelné)
 # certificate_arn = "arn:aws:acm:eu-central-1:123456789:certificate/xxx"
 # domain_name     = "app.example.com"
+
+# GitHub OIDC (pro bezheslo CI/CD autentizaci)
+github_org  = "nazev-organizace-nebo-username"
+github_repo = "aimtek"

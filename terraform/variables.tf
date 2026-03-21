@@ -31,9 +31,9 @@ variable "availability_zones" {
 
 # --- ECS / App ---
 variable "app_image" {
-  description = "Docker image pro aplikaci (ECR URI nebo public image)"
+  description = "Docker image pro aplikaci (ECR URI) — nastavte v terraform.tfvars"
   type        = string
-  default     = "nginx:latest" # Nahraďte vlastním image
+  # Bez defaultu — musí být explicitně nastaveno v terraform.tfvars
 }
 
 variable "app_port" {
