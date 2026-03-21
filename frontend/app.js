@@ -104,6 +104,7 @@
             } else {
                 panelRecord.classList.add('active');
                 panelUpload.classList.remove('active');
+                loadMics();
             }
             updateSubmit();
         });
@@ -155,7 +156,9 @@
     }
 
     /* ---- Microphones ---- */
-    (async function loadMics() {
+    let micsLoaded = false;
+    async function loadMics() {
+        if (micsLoaded) return;
         try {
             const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
             tmp.getTracks().forEach(t => t.stop());
@@ -168,10 +171,11 @@
                 o.textContent = m.label || `Mikrofon ${i + 1}`;
                 micSelect.appendChild(o);
             });
+            micsLoaded = true;
         } catch {
             micSelect.innerHTML = '<option value="">Mikrofon nedostupny</option>';
         }
-    })();
+    }
 
     /* ---- Recording (via AutoBackupAudioRecorder) ---- */
     recordBtn.addEventListener('click', () => isRecording ? stopRec() : startRec());
