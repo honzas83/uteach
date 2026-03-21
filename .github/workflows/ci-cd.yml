@@ -15,7 +15,6 @@ on:
         type: choice
         options:
           - main
-          - feature/summary-adjustments
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
