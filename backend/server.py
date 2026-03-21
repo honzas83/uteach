@@ -322,15 +322,28 @@ def process_task(
         fh.write(transcript)
     t['result'] = transcript
 
-    # 2. AI summarisation via Ollama
+    # 2. AI summarisation via Ollama (parallel)
     t['status'] = 'summarizing'
     sections = {}
+    prompt_ids = [
+        pid for pid in
+        ('lecture_summary', 'not_in_slides', 'glossary')
+        if pid in PROMPTS
+    ]
     try:
-        for pid in ('lecture_summary', 'not_in_slides', 'glossary'):
-            if pid in PROMPTS:
-                sections[pid] = call_ollama(
-                    pid, subject_code, transcript,
-                )
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _run_prompt(pid):
+            return pid, call_ollama(pid, subject_code, transcript)
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {
+                pool.submit(_run_prompt, pid): pid
+                for pid in prompt_ids
+            }
+            for future in as_completed(futures):
+                pid, result = future.result()
+                sections[pid] = result
     except Exception as e:
         t.update(
             status='done', summary=None, pdf_ready=False,
