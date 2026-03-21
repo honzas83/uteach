@@ -114,9 +114,9 @@ jobs:
 
       - name: Verify static assets served
         run: |
-          curl -sf http://localhost:5001/ | grep -q "<html" && echo "✅ index.html OK"
-          curl -sf -o /dev/null -w "%{http_code}" http://localhost:5001/styles.css | grep -q "200" && echo "✅ styles.css OK"
-          curl -sf -o /dev/null -w "%{http_code}" http://localhost:5001/app.js | grep -q "200" && echo "✅ app.js OK"
+          curl -sf http://localhost:5001/ > /dev/null && echo "✅ index.html OK" || (echo "❌ index.html FAIL" && exit 1)
+          curl -sf http://localhost:5001/styles.css > /dev/null && echo "✅ styles.css OK" || (echo "❌ styles.css FAIL" && exit 1)
+          curl -sf http://localhost:5001/app.js > /dev/null && echo "✅ app.js OK" || (echo "❌ app.js FAIL" && exit 1)
 
       - name: Stop test container
         if: always()
