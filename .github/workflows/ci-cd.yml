@@ -6,10 +6,16 @@
 name: CI/CD Pipeline
 
 on:
-  push:
-    branches: [main, feature/frontend]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Větev pro deploy'
+        required: true
+        default: 'feature/summary-adjustments'
+        type: choice
+        options:
+          - main
+          - feature/summary-adjustments
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
