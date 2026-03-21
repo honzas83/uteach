@@ -11,7 +11,7 @@ on:
       branch:
         description: 'Větev pro deploy'
         required: true
-        default: 'main'
+        default: 'super_final_branch'
         type: choice
         options:
           - main
