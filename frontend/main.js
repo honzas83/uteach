@@ -51,18 +51,24 @@
     editInstructions: $('#editInstructions'),
     regenerateBtn:    $('#regenerateBtn'),
     downloadPdf:      $('#downloadPdf'),
+    downloadAudio:    $('#downloadAudio'),
+    downloadTranscript:$('#downloadTranscript'),
     newSession:       $('#newSession'),
     privacyModal:     $('#privacyModal'),
     modalBackdrop:    $('#modalBackdrop'),
     modalContent:     $('#modalContent'),
     modalClose:       $('#modalClose'),
-    privacySkip:      $('#privacySkip'),
     privacyConfirm:   $('#privacyConfirm'),
     studentDropzone:  $('#studentDropzone'),
     studentFileInput: $('#studentFileInput'),
     studentFileTag:   $('#studentFileTag'),
     studentFileName:  $('#studentFileName'),
     removeStudentFile:$('#removeStudentFile'),
+    presentationDropzone:  $('#presentationDropzone'),
+    presentationFileInput: $('#presentationFileInput'),
+    presentationFileTag:   $('#presentationFileTag'),
+    presentationFileName:  $('#presentationFileName'),
+    removePresentationFile:$('#removePresentationFile'),
     customInstructions:$('#customInstructions'),
     toast:            $('#toast'),
     toastMessage:     $('#toastMessage'),
@@ -83,6 +89,8 @@
     recStartTime:  0,
     timerInterval: null,
     studentFile:   null,
+    presentationFile: null,
+    inputSource:   null,   // 'upload' | 'record'
   };
 
   /* ═══════════════ THEME ═══════════════ */
@@ -184,6 +192,7 @@
     }
     state.uploadedFile = file;
     state.recordedBlob = null;
+    state.inputSource = 'upload';
     dom.fileName.textContent = file.name;
     dom.fileSize.textContent = formatSize(file.size) + ' \u2022 ' + fakeDuration();
     dom.dropzone.classList.add('hidden');
@@ -194,6 +203,7 @@
 
   function clearFile() {
     state.uploadedFile = null;
+    state.inputSource = null;
     dom.fileInput.value = '';
     dom.dropzone.classList.remove('hidden');
     dom.filePreview.classList.add('hidden');
@@ -392,11 +402,13 @@
     dom.recordingPreview.classList.remove('hidden');
     dom.recorderHint.textContent = 'Nahrávka připravena';
     state.uploadedFile = null;
+    state.inputSource = 'record';
     updateSubmitBtn();
   }
 
   function discardRecording() {
     state.recordedBlob = null;
+    state.inputSource = null;
     dom.recordingPreview.classList.add('hidden');
     dom.recorderTime.textContent = '00:00';
     dom.recorderHint.textContent = 'Klikněte pro zahájení nahrávání';
@@ -596,6 +608,7 @@
   function updateSubmitBtn() {
     const hasInput = !!(state.uploadedFile || state.recordedBlob);
     dom.submitBtn.disabled = !hasInput;
+    dom.submitBtn.classList.toggle('pointer-events-none', !hasInput);
   }
 
   function initSubmit() {
@@ -633,10 +646,6 @@
   function initModal() {
     dom.modalClose.addEventListener('click', closeModal);
     dom.modalBackdrop.addEventListener('click', closeModal);
-    dom.privacySkip.addEventListener('click', () => {
-      closeModal();
-      setTimeout(startProcessing, 350);
-    });
     dom.privacyConfirm.addEventListener('click', () => {
       closeModal();
       setTimeout(startProcessing, 350);
@@ -657,6 +666,24 @@
       dom.studentFileInput.value = '';
       dom.studentFileTag.classList.add('hidden');
       dom.studentDropzone.classList.remove('hidden');
+    });
+
+    // Presentation upload
+    dom.presentationDropzone.addEventListener('click', () => dom.presentationFileInput.click());
+    dom.presentationFileInput.addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (f) {
+        state.presentationFile = f;
+        dom.presentationFileName.textContent = f.name;
+        dom.presentationFileTag.classList.remove('hidden');
+        dom.presentationDropzone.classList.add('hidden');
+      }
+    });
+    dom.removePresentationFile.addEventListener('click', () => {
+      state.presentationFile = null;
+      dom.presentationFileInput.value = '';
+      dom.presentationFileTag.classList.add('hidden');
+      dom.presentationDropzone.classList.remove('hidden');
     });
   }
 
@@ -739,6 +766,15 @@
       setScrollLock(false);
 
       dom.summaryContent.innerHTML = MOCK_SUMMARY;
+
+      // Enable "Download audio" only if user recorded (not uploaded a file)
+      if (state.inputSource === 'record' && state.recordedBlob) {
+        dom.downloadAudio.disabled = false;
+        dom.downloadAudio.classList.remove('disabled:opacity-30', 'disabled:cursor-not-allowed', 'disabled:pointer-events-none');
+      } else {
+        dom.downloadAudio.disabled = true;
+      }
+
       if (typeof lucide !== 'undefined') lucide.createIcons();
     });
   }
@@ -782,6 +818,29 @@
       // Placeholder — real implementation would generate PDF
     });
 
+    dom.downloadAudio.addEventListener('click', () => {
+      if (dom.downloadAudio.disabled) return;
+      if (!state.recordedBlob) { showToast('Žádná nahrávka k dispozici'); return; }
+      const url = URL.createObjectURL(state.recordedBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'uteach-nahravka.webm';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Stahuji audio\u2026');
+    });
+
+    dom.downloadTranscript.addEventListener('click', () => {
+      const blob = new Blob([MOCK_TRANSCRIPT], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'uteach-prepis.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Stahuji přepis\u2026');
+    });
+
     dom.newSession.addEventListener('click', resetApp);
   }
 
@@ -790,6 +849,8 @@
     state.uploadedFile = null;
     state.recordedBlob = null;
     state.studentFile = null;
+    state.presentationFile = null;
+    state.inputSource = null;
     dom.fileInput.value = '';
     dom.dropzone.classList.remove('hidden');
     dom.filePreview.classList.add('hidden');
@@ -798,6 +859,7 @@
     dom.recorderHint.textContent = 'Klikněte pro zahájení nahrávání';
     clearWaveCanvas();
     dom.submitBtn.disabled = true;
+    dom.submitBtn.classList.add('pointer-events-none');
     dom.btnSpinner.classList.add('hidden');
     if (dom.submitText) dom.submitText.classList.remove('opacity-0');
     dom.summaryContent.innerHTML = '';
@@ -806,6 +868,15 @@
     dom.studentFileInput.value = '';
     dom.studentFileTag.classList.add('hidden');
     dom.studentDropzone.classList.remove('hidden');
+    dom.presentationFileInput.value = '';
+    dom.presentationFileTag.classList.add('hidden');
+    dom.presentationDropzone.classList.remove('hidden');
+    // Reset download audio button
+    dom.downloadAudio.disabled = true;
+
+    // Clear localStorage
+    localStorage.removeItem('uteach-customInstructions');
+    localStorage.removeItem('uteach-editInstructions');
 
     dom.procStages.forEach(el => {
       el.classList.remove('proc-active', 'proc-done');
@@ -884,6 +955,24 @@
     requestAnimationFrame(animate);
   }
 
+  /* ═══════════════ LOCAL STORAGE PERSISTENCE ═══════════════ */
+  function initLocalStorage() {
+    // Restore saved values
+    const savedCustom = localStorage.getItem('uteach-customInstructions');
+    if (savedCustom) dom.customInstructions.value = savedCustom;
+
+    const savedEdit = localStorage.getItem('uteach-editInstructions');
+    if (savedEdit) dom.editInstructions.value = savedEdit;
+
+    // Save on input
+    dom.customInstructions.addEventListener('input', () => {
+      localStorage.setItem('uteach-customInstructions', dom.customInstructions.value);
+    });
+    dom.editInstructions.addEventListener('input', () => {
+      localStorage.setItem('uteach-editInstructions', dom.editInstructions.value);
+    });
+  }
+
   /* ═══════════════ INIT ═══════════════ */
   function init() {
     initTheme();
@@ -893,6 +982,7 @@
     initSubmit();
     initModal();
     initResults();
+    initLocalStorage();
     loadMicrophones();
     updateStepper(1);
     drawIdleWave();

@@ -211,7 +211,6 @@
                         <i data-lucide="check-circle-2" class="w-7 h-7 text-emerald-500"></i>
                     </div>
                     <h2 class="text-xl font-semibold mb-1">Sumarizace přednášky</h2>
-                    <p class="text-sm text-zinc-400 dark:text-zinc-500">Nejdůležitější body z vaší přednášky</p>
                 </div>
 
                 <div id="resultSummary" class="p-6 rounded-2xl bg-white dark:bg-zinc-900/50 border border-zinc-150 dark:border-zinc-800/50 min-h-[220px] max-h-[450px] overflow-y-auto custom-scrollbar mb-6">
@@ -232,12 +231,20 @@
                     </div>
                 </div>
 
-                <div class="flex items-center justify-center gap-3">
-                    <button id="downloadPdf" type="button" class="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 active:scale-[0.97] transition-all duration-150">
+                <div class="flex items-center justify-center gap-3 flex-wrap">
+                    <button id="downloadPdf" type="button" class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 active:scale-[0.97] transition-all duration-150">
                         <i data-lucide="download" class="w-4 h-4"></i>
                         Stáhnout PDF
                     </button>
-                    <button id="newSession" type="button" class="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium bg-zinc-50 dark:bg-zinc-800/80 hover:bg-zinc-100 dark:hover:bg-zinc-700/80 active:scale-[0.97] transition-all duration-150">
+                    <button id="downloadAudio" type="button" class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 active:scale-[0.97] transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed disabled:pointer-events-none" disabled>
+                        <i data-lucide="mic" class="w-4 h-4"></i>
+                        Stáhnout audio
+                    </button>
+                    <button id="downloadTranscript" type="button" class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 active:scale-[0.97] transition-all duration-150">
+                        <i data-lucide="file-text" class="w-4 h-4"></i>
+                        Stáhnout TXT
+                    </button>
+                    <button id="newSession" type="button" class="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-zinc-50 dark:bg-zinc-800/80 hover:bg-zinc-100 dark:hover:bg-zinc-700/80 active:scale-[0.97] transition-all duration-150">
                         <i data-lucide="arrow-left" class="w-4 h-4"></i>
                         Zpět na hlavní
                     </button>
@@ -254,14 +261,37 @@
                 <button id="modalClose" type="button" class="absolute top-4 right-4 w-9 h-9 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
                     <i data-lucide="x" class="w-4 h-4"></i>
                 </button>
-                <div class="p-7">
-                    <h3 class="text-lg font-semibold mb-1">Nastavení zpracování</h3>
-                    <p class="text-sm text-zinc-400 dark:text-zinc-500 mb-7">Volitelné nastavení pro lepší výsledky</p>
+                <div class="p-7 max-h-[80vh] overflow-y-auto custom-scrollbar">
+                    <div class="flex items-center gap-2 mb-1">
+                        <h3 class="text-lg font-semibold">Nastavení zpracování</h3>
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">nepovinné</span>
+                    </div>
+                    <p class="text-xs text-zinc-400 dark:text-zinc-500 mb-6">Obě pole můžete přeskočit.</p>
+
+                    <!-- Presentation Upload -->
                     <div class="mb-6">
-                        <label class="flex items-center gap-2 text-sm font-medium mb-2.5">
-                            <i data-lucide="users" class="w-4 h-4 text-brand-500"></i>
-                            Seznam studentů
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1.5">
+                            <i data-lucide="presentation" class="w-4 h-4 text-brand-500"></i>
+                            Prezentace / podklady
                         </label>
+                        <p class="text-xs text-zinc-400 dark:text-zinc-500 mb-2.5">Nahrajte slajdy nebo PDF — použijí se jako kontext pro přesnější souhrn.</p>
+                        <div id="presentationDropzone" class="cursor-pointer rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30 p-5 text-center hover:border-brand-400/40 dark:hover:border-brand-500/25 transition-all duration-150">
+                            <input type="file" id="presentationFileInput" class="sr-only" accept=".pdf,.pptx,.ppt,.key">
+                            <p class="text-sm text-zinc-400 dark:text-zinc-500"><span class="text-brand-500 font-medium">Nahrát</span> PDF, PPTX nebo KEY</p>
+                        </div>
+                        <div id="presentationFileTag" class="hidden mt-3 inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-brand-50 dark:bg-brand-500/10 text-sm">
+                            <span id="presentationFileName" class="text-brand-600 dark:text-brand-400 font-medium truncate max-w-[220px]"></span>
+                            <button id="removePresentationFile" type="button" class="text-brand-400 hover:text-red-500 transition-colors"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- Student List -->
+                    <div class="mb-6">
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1.5">
+                            <i data-lucide="shield-check" class="w-4 h-4 text-brand-500"></i>
+                            Seznam žáků
+                        </label>
+                        <p class="text-xs text-zinc-400 dark:text-zinc-500 mb-2.5">Nahrajte seznam jmen studentů — budou automaticky anonymizována v souhrnu i ve výsledném PDF.</p>
                         <div id="studentDropzone" class="cursor-pointer rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/30 p-6 text-center hover:border-brand-400/40 dark:hover:border-brand-500/25 transition-all duration-150">
                             <input type="file" id="studentFileInput" class="sr-only" accept=".csv,.pdf,.xlsx">
                             <p class="text-sm text-zinc-400 dark:text-zinc-500"><span class="text-brand-500 font-medium">Nahrát</span> CSV, PDF nebo XLSX</p>
@@ -272,15 +302,15 @@
                         </div>
                     </div>
                     <div class="mb-7">
-                        <label for="customInstructions" class="flex items-center gap-2 text-sm font-medium mb-2.5">
+                        <label for="customInstructions" class="flex items-center gap-2 text-sm font-medium mb-1.5">
                             <i data-lucide="message-square-text" class="w-4 h-4 text-brand-500"></i>
                             Vlastní instrukce
                         </label>
+                        <p class="text-xs text-zinc-400 dark:text-zinc-500 mb-2.5">Upřesněte, co chcete zdůraznit nebo vynechat — např. „nezmiňuj úvod" nebo „přidej více detailů o hlavním tématu".</p>
                         <textarea id="customInstructions" rows="3" class="w-full rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-800/40 px-4 py-3 text-sm placeholder:text-zinc-300 dark:placeholder:text-zinc-600 resize-none focus:outline-none focus:ring-2 focus:ring-brand-500/15 focus:border-brand-400 transition-all duration-150" placeholder="Např. zaměřte se na klíčové pojmy…"></textarea>
                     </div>
                     <div class="flex gap-3">
-                        <button id="privacySkip" type="button" class="flex-1 py-3 rounded-xl text-sm font-medium bg-zinc-50 dark:bg-zinc-800/80 hover:bg-zinc-100 dark:hover:bg-zinc-700/80 active:scale-[0.98] transition-all duration-150">Přeskočit</button>
-                        <button id="privacyConfirm" type="button" class="flex-1 py-3 rounded-xl text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2">
+                        <button id="privacyConfirm" type="button" class="w-full py-3 rounded-xl text-sm font-medium bg-brand-500 text-white hover:bg-brand-600 active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2">
                             <i data-lucide="arrow-right" class="w-4 h-4"></i>
                             Pokračovat
                         </button>
