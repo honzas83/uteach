@@ -1,4 +1,4 @@
-﻿prompts:
+prompts:
   - id: lecture_summary
     name: Shrnutí přednášky
     description: Zestručnění výkladu zahrnující všechna probíraná témata
