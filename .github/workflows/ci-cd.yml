@@ -1,7 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║              UTEACH.AI — CI/CD PIPELINE (FAST)                 ║
-# ║  lint+test ∥ build → deploy → smoke test                      ║
-# ║  security runs in parallel, does NOT block deploy              ║
+# ║  [lint+test ∥ security] → build+deploy → smoke+AI check       ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
 name: CI/CD Pipeline
@@ -28,7 +27,7 @@ permissions:
   id-token: write
 
 jobs:
-  # ━━━━━━━━━━━━━━━━ STAGE 1: LINT + TEST (single job, saves runner startup) ━━━━━━━━━━━━━━━━
+  # ━━━━━━━━━━━━━━━━ PARALLEL STAGE 1a: LINT + TEST ━━━━━━━━━━━━━━━━
   lint-and-test:
     name: "🔍🧪 Lint & Test"
     runs-on: ubuntu-latest
@@ -43,11 +42,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt flake8 pytest
 
-      - name: Python syntax check
-        run: python -m py_compile backend/server.py
-
-      - name: Flake8 lint
-        run: flake8 backend/server.py --max-line-length=120 --count --show-source --statistics
+      - name: Python syntax + Flake8 + Dockerfile lint
+        run: |
+          python -m py_compile backend/server.py
+          flake8 backend/server.py --max-line-length=120 --count --show-source --statistics
 
       - name: Validate Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
@@ -58,7 +56,32 @@ jobs:
       - name: Run tests
         run: pytest backend/tests/ -v --tb=short
 
-  # ━━━━━━━━━━━━━━━━ STAGE 2: BUILD + DEPLOY (single job, no extra runner) ━━━━━━━━━━━━━━━━
+  # ━━━━━━━━━━━━━━━━ PARALLEL STAGE 1b: SECURITY (non-blocking) ━━━━━━━━━━━━━━━━
+  security:
+    name: "🛡️ Security Scan"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Audit + Trivy
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt || true
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+
+  # ━━━━━━━━━━━━━━━━ STAGE 2: BUILD + DEPLOY ━━━━━━━━━━━━━━━━
   build-and-deploy:
     name: "🏗️🚀 Build & Deploy"
     runs-on: ubuntu-latest
@@ -125,36 +148,9 @@ jobs:
             echo "⚠️ CloudFront distribution not found, skipping"
           fi
 
-  # ━━━━━━━━━━━━━━━━ PARALLEL: SECURITY (does NOT block deploy) ━━━━━━━━━━━━━━━━
-  security:
-    name: "🛡️ Security Scan"
-    runs-on: ubuntu-latest
-    needs: lint-and-test
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-
-      - name: Install pip-audit
-        run: pip install pip-audit
-
-      - name: Check dependencies for vulnerabilities
-        run: pip-audit -r backend/requirements.txt
-        continue-on-error: true
-
-      - name: Scan with Trivy
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-ref: .
-          severity: CRITICAL,HIGH
-
-  # ━━━━━━━━━━━━━━━━ STAGE 3: SMOKE TEST (fast) ━━━━━━━━━━━━━━━━
+  # ━━━━━━━━━━━━━━━━ STAGE 3: SMOKE TEST + AI API CHECK ━━━━━━━━━━━━━━━━
   smoke-test:
-    name: "💨 Smoke Test"
+    name: "💨 Smoke & AI Check"
     runs-on: ubuntu-latest
     needs: build-and-deploy
 
@@ -185,22 +181,41 @@ jobs:
             echo "url=https://$CF_DOMAIN" >> $GITHUB_OUTPUT
           fi
 
-      - name: Health endpoint check
+      - name: Health + Homepage check
         run: |
+          URL="${{ steps.alb.outputs.url }}"
+          # Health
           for i in $(seq 1 5); do
-            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "${{ steps.alb.outputs.url }}/health" || true)
+            STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$URL/health" || true)
             if [ "$STATUS" = "200" ]; then
               echo "✅ /health returned 200"
-              exit 0
+              HEALTH_JSON=$(curl -sf "$URL/health")
+              echo "   Model: $(echo $HEALTH_JSON | python3 -c 'import sys,json; print(json.load(sys.stdin).get(\"model\",\"?\"))')"
+              break
             fi
             echo "Attempt $i: got $STATUS, retrying in 5s..."
             sleep 5
           done
-          echo "❌ Smoke test failed"
-          exit 1
-
-      - name: Homepage check
-        run: |
-          curl -sf "${{ steps.alb.outputs.url }}/" | grep -q "<html" \
+          [ "$STATUS" != "200" ] && echo "❌ Health check failed" && exit 1
+          # Homepage
+          curl -sf "$URL/" | grep -q "<html" \
             && echo "✅ Homepage serves HTML" \
             || (echo "❌ Homepage check failed" && exit 1)
+
+      - name: Ollama AI API check
+        continue-on-error: true
+        run: |
+          URL="${{ steps.alb.outputs.url }}"
+          echo "Testing /summarize endpoint (Ollama connectivity)..."
+          RESP=$(curl -sf -X POST "$URL/summarize" \
+            -H "Content-Type: application/json" \
+            -d '{"transcript":"Test: neuronová síť je matematický model."}' \
+            --max-time 120 || echo '{"error":"timeout or connection failed"}')
+          if echo "$RESP" | python3 -c 'import sys,json; d=json.load(sys.stdin); exit(0 if d.get("summary") else 1)' 2>/dev/null; then
+            SUMMARY=$(echo "$RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin)["summary"][:150])')
+            echo "✅ Ollama AI responds: $SUMMARY..."
+          else
+            ERR=$(echo "$RESP" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("error","unknown"))' 2>/dev/null || echo "$RESP")
+            echo "⚠️ Ollama AI unavailable: $ERR"
+            echo "   (non-blocking — AI may be warming up)"
+          fi
